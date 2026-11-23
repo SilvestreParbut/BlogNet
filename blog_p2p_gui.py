@@ -2426,7 +2426,6 @@ class BlogP2PApp:
         self.notebook.select(self.tab_leyendo)
         self.articulo_actual_id = articulo_id
         
-        # Si abrimos un artículo normal (no desde la colección), salimos del modo colección
         if not desde_coleccion:
             self.coleccion_en_lectura = None
             if hasattr(self, 'frame_coleccion_nav'):
@@ -2444,11 +2443,30 @@ class BlogP2PApp:
         anuncio = next((a for a in self.articulos_descubiertos if a["id"] == articulo_id), None)
         if anuncio:
             self.etiqueta_titulo_lectura.config(text=anuncio["titulo"])
-            self._cambiar_texto_lectura("Solicitando el artículo al autor...")
             self.lbl_count.config(text=f"({len(anuncio.get('likes', []))})")
             self.lbl_heart.config(fg="red")
             self.btn_quitar_etiqueta.pack_forget()
-            self._pedir_articulo_con_reintentos(anuncio["autor"], articulo_id)
+            
+            # --- NUEVA LÓGICA P2P ---
+            autor_id = anuncio.get("autor")
+            
+            # Si el autor está conectado, le pedimos a él (es más rápido)
+            if self._esta_conectado(autor_id):
+                self._cambiar_texto_lectura("Solicitando el artículo al autor...")
+                self._pedir_articulo_con_reintentos(autor_id, articulo_id)
+            else:
+                # Si el autor NO está conectado, pedimos a toda la red (Broadcast)
+                self._cambiar_texto_lectura("El autor está desconectado.\nBuscando copias respaldadas en la red P2P...")
+                self.node.broadcast_json("get_article", {"id": articulo_id}) # Petición sin target
+                
+                # Si en 10 segundos nadie responde, mostramos un aviso
+                self.root.after(10000, lambda: self._timeout_busqueda(articulo_id))
+
+    def _timeout_busqueda(self, articulo_id):
+        # Solo mostramos el aviso si seguimos esperando el mismo artículo
+        if self.articulo_actual_id == articulo_id and self.texto_lectura.get("1.0", "end-1c").startswith("El autor está desconectado"):
+            self._cambiar_texto_lectura("No se encontraron nodos con este artículo en la red.\n\n"
+                                        "Puede que nadie lo haya respaldado aún, o que los nodos estén desconectados.")
 
     def _exportar_epub(self):
         if not self.articulos_guardados:
