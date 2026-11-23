@@ -25,7 +25,7 @@ pip install --upgrade pip
 pip install librats Pillow ebooklib
 
 # 4. Create the executable launcher
-sudo cat << 'EOF' > /usr/local/bin/blognet
+sudo tee /usr/local/bin/blognet > /dev/null << 'EOF'
 #!/bin/bash
 cd /opt/blognet
 source .venv/bin/activate
