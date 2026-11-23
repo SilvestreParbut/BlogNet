@@ -3149,23 +3149,21 @@ class BlogP2PApp:
     def _pedir_articulo_con_reintentos(self, peer_id, articulo_id, intentos=15):
         """Intenta enviar get_article; si el peer aún no está listo, reintenta."""
         if intentos <= 0:
-            print(f"❌ No se pudo pedir {articulo_id} a {peer_id[:12]} tras varios intentos")
-            # Último recurso: broadcast a todos los pares conectados
+            print(f"❌ Autor {peer_id[:12]} no responde. Buscando en toda la red...")
+            self._cambiar_texto_lectura("El autor no responde.\nBuscando copias respaldadas en la red P2P...")
+            # ¡EL CAMBIO CLAVE! Broadcast SIN target, para que cualquiera que lo tenga responda.
             try:
-                self.node.broadcast_json("get_article", {"id": articulo_id, "target": peer_id})
-                print("📢 Enviado broadcast como último recurso")
+                self.node.broadcast_json("get_article", {"id": articulo_id})
+                self.root.after(10000, lambda: self._timeout_busqueda(articulo_id))
             except Exception as e:
                 print(f"Error en broadcast: {e}")
-                self._cambiar_texto_lectura("No se pudo conectar con el autor. Inténtalo de nuevo más tarde.")
             return
 
         from librats_py.exceptions import RatsNoSuchPeerError
         try:
-            # Enviamos el mensaje incluyendo el target para que solo el autor responda
             self.node.send_json(peer_id, "get_article", {"id": articulo_id, "target": peer_id})
             print(f"✅ get_article enviado a {peer_id[:12]}")
         except RatsNoSuchPeerError:
-            # El peer aún no está conectado, reintentar en 200 ms
             self.root.after(200, lambda: self._pedir_articulo_con_reintentos(peer_id, articulo_id, intentos - 1))
         except Exception as e:
             print(f"Error enviando get_article: {e}")
