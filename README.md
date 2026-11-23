@@ -1,4 +1,3 @@
-cat << 'EOF' > README.md
 # BlogNet
 
 **BlogNet** is a decentralized, P2P-based blogging network application.
