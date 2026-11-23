@@ -19,46 +19,225 @@ from librats_py import RatsNode, LogLevel, set_log_level
 # Silenciar los logs internos de librats
 set_log_level(LogLevel.WARN)
 
-TEMATICAS = ["cultura", "política", "economía", "historia", "moda", "música", "libros", "tecnología", "ciencia"]
-IDIOMAS = ["Español", "English", "Português", "Deutsch", "Français"]
-MAPEO_IDIOMAS = {"es": "Español", "en": "English", "pt": "Português", "de": "Deutsch", "fr": "Français"}
+TEMATICAS = ["cultura", "política", "economía", "historia", "moda", "música", "libros", "viajes", "tecnología", "ciencia"]
+
+# Mapeo de códigos ISO a nombres
+MAPEO_IDIOMAS = {
+    "es": "Español", "en": "English", "de": "Deutsch", "fr": "Français",
+    "it": "Italiano", "pt": "Português", "ro": "Română", "sv": "Svenska",
+    "no": "Norsk", "da": "Dansk", "ru": "Русский"
+}
+IDIOMAS = list(MAPEO_IDIOMAS.values())
 
 TRADUCCIONES = {
     "es": {
-        "Descubrir": "Descubrir", "Publicar": "Publicar", "Leyendo": "Leyendo", 
-        "Mi espacio": "Mi espacio", "Autores": "Autores", "Categoría:": "Categoría:",
-        "Etiqueta:": "Etiqueta:", "Idioma:": "Idioma:", "Buscar": "Buscar",
-        "Todas": "Todas", "Todos": "Todos", "Título:": "Título:", "Etiquetas:": "Etiquetas:",
-        "Contenido:": "Contenido:", "Publicar artículo": "Publicar artículo",
-        "Mi perfil": "Mi perfil", "Guardar Perfil": "Guardar Perfil",
-        "Mis artículos publicados": "Mis artículos publicados", "Almacenamiento": "Almacenamiento",
-        "Autores seguidos": "Autores seguidos", "Artículos guardados": "Artículos guardados",
-        "Borrar guardado": "Borrar guardado", "Doble clic para leer": "Doble clic para leer",
-        "Guardar artículo": "Guardar artículo", "Editar artículo": "Editar artículo",
-        "Borrar artículo": "Borrar artículo", "Seguir autor": "Seguir autor",
-        "Seguir y Respaldar": "Seguir y Respaldar", "Ver perfil del autor": "Ver perfil del autor",
-        "Recientes de seguidos": "Recientes de seguidos", "Descubrir por azar": "Descubrir por azar",
-        "Nombre:": "Nombre:", "Descripción:": "Descripción:", "Selecciona un autor": "Selecciona un autor",
-        "Artículos publicados (más recientes primero):": "Artículos publicados (más recientes primero):",
-        "Título": "Título", "Categoría": "Categoría", "ID (Fecha)": "ID (Fecha)", "Cambiar límite": "Cambiar límite"
+        "Descubrir": "Descubrir", "Redactar": "Redactar", "Leyendo": "Leyendo", 
+        "Mi espacio": "Mi espacio", "Autores": "Autores", "Avisos": "Avisos", 
+        "Categoría:": "Categoría:", "Etiqueta:": "Etiqueta:", "Idioma:": "Idioma:", 
+        "Buscar": "Buscar", "Todas": "Todas", "Todos": "Todos", 
+        "Título:": "Título:", "Etiquetas:": "Etiquetas:", "Contenido:": "Contenido:", 
+        "Publicar artículo": "Publicar artículo", "Mi perfil": "Mi perfil", 
+        "Guardar Perfil": "Guardar Perfil", "Mis artículos publicados": "Mis artículos publicados", 
+        "Almacenamiento": "Almacenamiento", "Autores seguidos": "Autores seguidos", 
+        "Artículos guardados": "Artículos guardados", "Borrar guardado": "Borrar guardado", 
+        "Doble clic para leer": "Doble clic para leer", "Guardar artículo": "Guardar artículo", 
+        "Editar artículo": "Editar artículo", "Borrar artículo": "Borrar artículo", 
+        "Seguir autor": "Seguir autor", "Seguir y Respaldar": "Seguir y Respaldar", 
+        "Ver perfil del autor": "Ver perfil del autor", "Recientes de seguidos": "Recientes de seguidos", 
+        "Descubrir por azar": "Descubrir por azar", "Nombre:": "Nombre:", "Descripción:": "Descripción:", 
+        "Selecciona un autor": "Selecciona un autor", "Título": "Título", "Categoría": "Categoría", 
+        "ID (Fecha)": "ID (Fecha)", "Cambiar límite": "Cambiar límite", "Automático": "Automático",
+        "Ancho:": "Márgenes:", "Ajustar": "Ajustar"
     },
     "en": {
-        "Descubrir": "Discover", "Publicar": "Publish", "Leyendo": "Reading", 
-        "Mi espacio": "My Space", "Autores": "Authors", "Categoría:": "Category:",
-        "Etiqueta:": "Tag:", "Idioma:": "Language:", "Buscar": "Search",
-        "Todas": "All", "Todos": "All", "Título:": "Title:", "Etiquetas:": "Tags:",
-        "Contenido:": "Content:", "Publicar artículo": "Publish Article",
-        "Mi perfil": "My Profile", "Guardar Perfil": "Save Profile",
-        "Mis artículos publicados": "My published articles", "Almacenamiento": "Storage",
-        "Autores seguidos": "Followed authors", "Artículos guardados": "Saved articles",
-        "Borrar guardado": "Delete saved", "Doble clic para leer": "Double click to read",
-        "Guardar artículo": "Save article", "Editar artículo": "Edit article",
-        "Borrar artículo": "Delete article", "Seguir autor": "Follow author",
-        "Seguir y Respaldar": "Follow & Backup", "Ver perfil del autor": "View author profile",
-        "Recientes de seguidos": "Recent from followed", "Descubrir por azar": "Discover randomly",
-        "Nombre:": "Name:", "Descripción:": "Description:", "Selecciona un autor": "Select an author",
-        "Artículos publicados (más recientes primero):": "Published articles (newest first):",
-        "Título": "Title", "Categoría": "Category", "ID (Fecha)": "ID (Date)", "Cambiar límite": "Change limit"
+        "Descubrir": "Discover", "Redactar": "Compose", "Leyendo": "Reading", 
+        "Mi espacio": "My Space", "Autores": "Authors", "Avisos": "Alerts", 
+        "Categoría:": "Category:", "Etiqueta:": "Tag:", "Idioma:": "Language:", 
+        "Buscar": "Search", "Todas": "All", "Todos": "All", 
+        "Título:": "Title:", "Etiquetas:": "Tags:", "Contenido:": "Content:", 
+        "Publicar artículo": "Publish article", "Mi perfil": "My profile", 
+        "Guardar Perfil": "Save Profile", "Mis artículos publicados": "My published articles", 
+        "Almacenamiento": "Storage", "Autores seguidos": "Followed authors", 
+        "Artículos guardados": "Saved articles", "Borrar guardado": "Delete saved", 
+        "Doble clic para leer": "Double click to read", "Guardar artículo": "Save article", 
+        "Editar artículo": "Edit article", "Borrar artículo": "Delete article", 
+        "Seguir autor": "Follow author", "Seguir y Respaldar": "Follow & Backup", 
+        "Ver perfil del autor": "View author profile", "Recientes de seguidos": "Recent from followed", 
+        "Descubrir por azar": "Discover randomly", "Nombre:": "Name:", "Descripción:": "Description:", 
+        "Selecciona un autor": "Select an author", "Título": "Title", "Categoría": "Category", 
+        "ID (Fecha)": "ID (Date)", "Cambiar límite": "Change limit", "Automático": "Automatic",
+        "Ancho:": "Margins:", "Ajustar": "Adjust"
+    },
+    "de": { # Alemán
+        "Descubrir": "Entdecken", "Redactar": "Verfassen", "Leyendo": "Lesen", 
+        "Mi espacio": "Mein Bereich", "Autores": "Autoren", "Avisos": "Hinweise", 
+        "Categoría:": "Kategorie:", "Etiqueta:": "Tag:", "Idioma:": "Sprache:", 
+        "Buscar": "Suchen", "Todas": "Alle", "Todos": "Alle", 
+        "Título:": "Titel:", "Etiquetas:": "Tags:", "Contenido:": "Inhalt:", 
+        "Publicar artículo": "Artikel veröffentlichen", "Mi perfil": "Mein Profil", 
+        "Guardar Perfil": "Profil speichern", "Mis artículos publicados": "Meine veröffentlichten Artikel", 
+        "Almacenamiento": "Speicher", "Autores seguidos": "Gefolgte Autoren", 
+        "Artículos guardados": "Gespeicherte Artikel", "Borrar guardado": "Gespeichertes löschen", 
+        "Doble clic para leer": "Doppelklick zum Lesen", "Guardar artículo": "Artikel speichern", 
+        "Editar artículo": "Artikel bearbeiten", "Borrar artículo": "Artikel löschen", 
+        "Seguir autor": "Autor folgen", "Seguir y Respaldar": "Folgen & Sichern", 
+        "Ver perfil del autor": "Autorenprofil ansehen", "Recientes de seguidos": "Neueste von Gefolgten", 
+        "Descubrir por azar": "Zufällig entdecken", "Nombre:": "Name:", "Descripción:": "Beschreibung:", 
+        "Selecciona un autor": "Wähle einen Autor", "Título": "Titel", "Categoría": "Kategorie", 
+        "ID (Fecha)": "ID (Datum)", "Cambiar límite": "Limit ändern", "Automático": "Automatisch",
+        "Ancho:": "Ränder:", "Ajustar": "Anpassen"
+    },
+    "fr": { # Francés
+        "Descubrir": "Découvrir", "Redactar": "Rédiger", "Leyendo": "Lecture", 
+        "Mi espacio": "Mon espace", "Autores": "Auteurs", "Avisos": "Alertes", 
+        "Categoría:": "Catégorie:", "Etiqueta:": "Tag:", "Idioma:": "Langue:", 
+        "Buscar": "Chercher", "Todas": "Toutes", "Todos": "Tous", 
+        "Título:": "Titre:", "Etiquetas:": "Tags:", "Contenido:": "Contenu:", 
+        "Publicar artículo": "Publier l'article", "Mi perfil": "Mon profil", 
+        "Guardar Perfil": "Enregistrer le profil", "Mis artículos publicados": "Mes articles publiés", 
+        "Almacenamiento": "Stockage", "Autores seguidos": "Auteurs suivis", 
+        "Artículos guardados": "Articles sauvegardés", "Borrar guardado": "Supprimer la sauvegarde", 
+        "Doble clic para leer": "Double-cliquez pour lire", "Guardar artículo": "Sauvegarder l'article", 
+        "Editar artículo": "Modifier l'article", "Borrar artículo": "Supprimer l'article", 
+        "Seguir autor": "Suivre l'auteur", "Seguir y Respaldar": "Suivre & Sauvegarder", 
+        "Ver perfil del autor": "Voir le profil de l'auteur", "Recientes de seguidos": "Récent des suivis", 
+        "Descubrir por azar": "Découvrir au hasard", "Nombre:": "Nom:", "Descripción:": "Description:", 
+        "Selecciona un autor": "Sélectionnez un auteur", "Título": "Titre", "Categoría": "Catégorie", 
+        "ID (Fecha)": "ID (Date)", "Cambiar límite": "Changer la limite", "Automático": "Automatique",
+        "Ancho:": "Marges:", "Ajustar": "Ajuster"
+    },
+    "it": { # Italiano
+        "Descubrir": "Scopri", "Redactar": "Scrivi", "Leyendo": "Lettura", 
+        "Mi espacio": "Il mio spazio", "Autores": "Autori", "Avisos": "Avvisi", 
+        "Categoría:": "Categoria:", "Etiqueta:": "Tag:", "Idioma:": "Lingua:", 
+        "Buscar": "Cerca", "Todas": "Tutte", "Todos": "Tutti", 
+        "Título:": "Titolo:", "Etiquetas:": "Tag:", "Contenido:": "Contenuto:", 
+        "Publicar artículo": "Pubblica articolo", "Mi perfil": "Il mio profilo", 
+        "Guardar Perfil": "Salva profilo", "Mis artículos publicados": "I miei articoli pubblicati", 
+        "Almacenamiento": "Archiviazione", "Autores seguidos": "Autori seguiti", 
+        "Artículos guardados": "Articoli salvati", "Borrar guardado": "Elimina salvato", 
+        "Doble clic para leer": "Doppio clic per leggere", "Guardar artículo": "Salva articolo", 
+        "Editar artículo": "Modifica articolo", "Borrar artículo": "Elimina articolo", 
+        "Seguir autor": "Segui autore", "Seguir y Respaldar": "Segui e Supporta", 
+        "Ver perfil del autor": "Vedi profilo autore", "Recientes de seguidos": "Recenti dai seguiti", 
+        "Descubrir por azar": "Scopri a caso", "Nombre:": "Nome:", "Descripción:": "Descrizione:", 
+        "Selecciona un autor": "Seleziona un autore", "Título": "Titolo", "Categoría": "Categoria", 
+        "ID (Fecha)": "ID (Data)", "Cambiar límite": "Cambia limite", "Automático": "Automatico",
+        "Ancho:": "Margini:", "Ajustar": "Regola"
+    },
+    "pt": { # Portugués
+        "Descubrir": "Descobrir", "Redactar": "Escrever", "Leyendo": "Lendo", 
+        "Mi espacio": "Meu espaço", "Autores": "Autores", "Avisos": "Avisos", 
+        "Categoría:": "Categoria:", "Etiqueta:": "Etiqueta:", "Idioma:": "Idioma:", 
+        "Buscar": "Buscar", "Todas": "Todas", "Todos": "Todos", 
+        "Título:": "Título:", "Etiquetas:": "Etiquetas:", "Contenido:": "Conteúdo:", 
+        "Publicar artículo": "Publicar artigo", "Mi perfil": "Meu perfil", 
+        "Guardar Perfil": "Salvar perfil", "Mis artículos publicados": "Meus artigos publicados", 
+        "Almacenamiento": "Armazenamento", "Autores seguidos": "Autores seguidos", 
+        "Artículos guardados": "Artigos salvos", "Borrar guardado": "Excluir salvo", 
+        "Doble clic para leer": "Clique duplo para ler", "Guardar artículo": "Salvar artigo", 
+        "Editar artículo": "Editar artigo", "Borrar artículo": "Excluir artigo", 
+        "Seguir autor": "Seguir autor", "Seguir y Respaldar": "Seguir e Apoiar", 
+        "Ver perfil del autor": "Ver perfil do autor", "Recientes de seguidos": "Recentes de seguidos", 
+        "Descubrir por azar": "Descobrir aleatoriamente", "Nombre:": "Nome:", "Descripción:": "Descrição:", 
+        "Selecciona un autor": "Selecione um autor", "Título": "Título", "Categoría": "Categoria", 
+        "ID (Fecha)": "ID (Data)", "Cambiar límite": "Mudar limite", "Automático": "Automático",
+        "Ancho:": "Margens:", "Ajustar": "Ajustar"
+    },
+    "ro": { # Rumano
+        "Descubrir": "Descoperă", "Redactar": "Scrie", "Leyendo": "Citind", 
+        "Mi espacio": "Spațiul meu", "Autores": "Autori", "Avisos": "Alerte", 
+        "Categoría:": "Categorie:", "Etiqueta:": "Etichetă:", "Idioma:": "Limbă:", 
+        "Buscar": "Caută", "Todas": "Toate", "Todos": "Toți", 
+        "Título:": "Titlu:", "Etiquetas:": "Etichete:", "Contenido:": "Conținut:", 
+        "Publicar artículo": "Publică articolul", "Mi perfil": "Profilul meu", 
+        "Guardar Perfil": "Salvează profilul", "Mis artículos publicados": "Articolele mele publicate", 
+        "Almacenamiento": "Stocare", "Autores seguidos": "Autori urmăriți", 
+        "Artículos guardados": "Articole salvate", "Borrar guardado": "Șterge salvat", 
+        "Doble clic para leer": "Dublu clic pentru a citi", "Guardar artículo": "Salvează articolul", 
+        "Editar artículo": "Editează articolul", "Borrar artículo": "Șterge articolul", 
+        "Seguir autor": "Urmărește autorul", "Seguir y Respaldar": "Urmărește și Susține", 
+        "Ver perfil del autor": "Vezi profilul autorului", "Recientes de seguidos": "Recente de la urmăriți", 
+        "Descubrir por azar": "Descoperă la întâmplare", "Nombre:": "Nume:", "Descripción:": "Descriere:", 
+        "Selecciona un autor": "Selectează un autor", "Título": "Titlu", "Categoría": "Categorie", 
+        "ID (Fecha)": "ID (Dată)", "Cambiar límite": "Schimbă limita", "Automático": "Automat",
+        "Ancho:": "Margini:", "Ajustar": "Ajustează"
+    },
+    "sv": { # Sueco
+        "Descubrir": "Upptäck", "Redactar": "Skriv", "Leyendo": "Läser", 
+        "Mi espacio": "Mitt utrymme", "Autores": "Författare", "Avisos": "Aviseringar", 
+        "Categoría:": "Kategori:", "Etiqueta:": "Tagg:", "Idioma:": "Språk:", 
+        "Buscar": "Sök", "Todas": "Alla", "Todos": "Alla", 
+        "Título:": "Titel:", "Etiquetas:": "Taggar:", "Contenido:": "Innehåll:", 
+        "Publicar artículo": "Publicera artikel", "Mi perfil": "Min profil", 
+        "Guardar Perfil": "Spara profil", "Mis artículos publicados": "Mina publicerade artiklar", 
+        "Almacenamiento": "Lagring", "Autores seguidos": "Följda författare", 
+        "Artículos guardados": "Sparade artiklar", "Borrar guardado": "Radera sparad", 
+        "Doble clic para leer": "Dubbelklicka för att läsa", "Guardar artículo": "Spara artikel", 
+        "Editar artículo": "Redigera artikel", "Borrar artículo": "Radera artikel", 
+        "Seguir autor": "Följ författare", "Seguir y Respaldar": "Följ & Säkerhetskopiera", 
+        "Ver perfil del autor": "Visa författarprofil", "Recientes de seguidos": "Senaste från följda", 
+        "Descubrir por azar": "Upptäck slumpmässigt", "Nombre:": "Namn:", "Descripción:": "Beskrivning:", 
+        "Selecciona un autor": "Välj en författare", "Título": "Titel", "Categoría": "Kategori", 
+        "ID (Fecha)": "ID (Datum)", "Cambiar límite": "Ändra gräns", "Automático": "Automatisk",
+        "Ancho:": "Marginaler:", "Ajustar": "Justera"
+    },
+    "no": { # Noruego
+        "Descubrir": "Oppdag", "Redactar": "Skriv", "Leyendo": "Leser", 
+        "Mi espacio": "Min plass", "Autores": "Forfattere", "Avisos": "Varsler", 
+        "Categoría:": "Kategori:", "Etiqueta:": "Tagg:", "Idioma:": "Språk:", 
+        "Buscar": "Søk", "Todas": "Alle", "Todos": "Alle", 
+        "Título:": "Tittel:", "Etiquetas:": "Tagger:", "Contenido:": "Innhold:", 
+        "Publicar artículo": "Publiser artikkel", "Mi perfil": "Min profil", 
+        "Guardar Perfil": "Lagre profil", "Mis artículos publicados": "Mine publiserte artikler", 
+        "Almacenamiento": "Lagring", "Autores seguidos": "Fulgte forfattere", 
+        "Artículos guardados": "Lagrede artikler", "Borrar guardado": "Slett lagret", 
+        "Doble clic para leer": "Dobbeltklikk for å lese", "Guardar artículo": "Lagre artikkel", 
+        "Editar artículo": "Rediger artikkel", "Borrar artículo": "Slett artikkel", 
+        "Seguir autor": "Følg forfatter", "Seguir y Respaldar": "Følg & Sikkerhetskopier", 
+        "Ver perfil del autor": "Se forfatterprofil", "Recientes de seguidos": "Nylige fra fulgte", 
+        "Descubrir por azar": "Oppdag tilfeldig", "Nombre:": "Navn:", "Descripción:": "Beskrivelse:", 
+        "Selecciona un autor": "Velg en forfatter", "Título": "Tittel", "Categoría": "Kategori", 
+        "ID (Fecha)": "ID (Dato)", "Cambiar límite": "Endre grense", "Automático": "Automatisk",
+        "Ancho:": "Marginer:", "Ajustar": "Juster"
+    },
+    "da": { # Danés
+        "Descubrir": "Opdag", "Redactar": "Skriv", "Leyendo": "Læser", 
+        "Mi espacio": "Mit rum", "Autores": "Forfattere", "Avisos": "Underretninger", 
+        "Categoría:": "Kategori:", "Etiqueta:": "Tag:", "Idioma:": "Sprog:", 
+        "Buscar": "Søg", "Todas": "Alle", "Todos": "Alle", 
+        "Título:": "Titel:", "Etiquetas:": "Tags:", "Contenido:": "Indhold:", 
+        "Publicar artículo": "Udgiv artikel", "Mi perfil": "Min profil", 
+        "Guardar Perfil": "Gem profil", "Mis artículos publicados": "Mine udgivne artikler", 
+        "Almacenamiento": "Lager", "Autores seguidos": "Fulgte forfattere", 
+        "Artículos guardados": "Gemte artikler", "Borrar guardado": "Slet gemt", 
+        "Doble clic para leer": "Dobbeltklik for at læse", "Guardar artículo": "Gem artikel", 
+        "Editar artículo": "Rediger artikel", "Borrar artículo": "Slet artikel", 
+        "Seguir autor": "Følg forfatter", "Seguir y Respaldar": "Følg & Sikkerhedskopier", 
+        "Ver perfil del autor": "Se forfatterprofil", "Recientes de seguidos": "Seneste fra fulgte", 
+        "Descubrir por azar": "Opdag tilfældigt", "Nombre:": "Navn:", "Descripción:": "Beskrivelse:", 
+        "Selecciona un autor": "Vælg en forfatter", "Título": "Titel", "Categoría": "Kategori", 
+        "ID (Fecha)": "ID (Dato)", "Cambiar límite": "Skift grænse", "Automático": "Automatisk",
+        "Ancho:": "Margener:", "Ajustar": "Juster"
+    },
+    "ru": { # Ruso
+        "Descubrir": "Обзор", "Redactar": "Написать", "Leyendo": "Чтение", 
+        "Mi espacio": "Мое пространство", "Autores": "Авторы", "Avisos": "Уведомления", 
+        "Categoría:": "Категория:", "Etiqueta:": "Тег:", "Idioma:": "Язык:", 
+        "Buscar": "Поиск", "Todas": "Все", "Todos": "Все", 
+        "Título:": "Заголовок:", "Etiquetas:": "Теги:", "Contenido:": "Содержание:", 
+        "Publicar artículo": "Опубликовать статью", "Mi perfil": "Мой профиль", 
+        "Guardar Perfil": "Сохранить профиль", "Mis artículos publicados": "Мои опубликованные статьи", 
+        "Almacenamiento": "Хранилище", "Autores seguidos": "Отслеживаемые авторы", 
+        "Artículos guardados": "Сохраненные статьи", "Borrar guardado": "Удалить сохраненное", 
+        "Doble clic para leer": "Двойной клик для чтения", "Guardar artículo": "Сохранить статью", 
+        "Editar artículo": "Редактировать статью", "Borrar artículo": "Удалить статью", 
+        "Seguir autor": "Подписаться на автора", "Seguir y Respaldar": "Подписаться и поддержать", 
+        "Ver perfil del autor": "Профиль автора", "Recientes de seguidos": "Новое от подписок", 
+        "Descubrir por azar": "Случайный поиск", "Nombre:": "Имя:", "Descripción:": "Описание:", 
+        "Selecciona un autor": "Выберите автора", "Título": "Заголовок", "Categoría": "Категория", 
+        "ID (Fecha)": "ID (Дата)", "Cambiar límite": "Изменить лимит", "Automático": "Авто",
+        "Ancho:": "Отступы:", "Ajustar": "Настроить"
     }
 }
 
@@ -122,14 +301,17 @@ class BlogP2PApp:
         
         # Detectar idioma del sistema
         try:
+            # Intenta obtener el idioma del sistema (ej: es_ES.UTF-8, en_US, de_DE)
             lang_env = os.environ.get('LANG', 'es_ES')
             idioma_sistema = lang_env[:2].lower()
         except:
             idioma_sistema = "es"
         
-        self.idioma_actual = MAPEO_IDIOMAS.get(idioma_sistema, "Español")
+        # Si el idioma del sistema no está en nuestras traducciones, usamos inglés por defecto (o español)
         if idioma_sistema not in TRADUCCIONES:
-            idioma_sistema = "es"
+            idioma_sistema = "en" 
+            
+        self.idioma_actual = MAPEO_IDIOMAS.get(idioma_sistema, "English")
         self.lang_code = idioma_sistema
 
         self._init_db()
