@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+blog_state/
+dist/
+build/
+*.spec
+*.deb
