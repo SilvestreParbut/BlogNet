@@ -288,13 +288,13 @@ class BlogP2PApp:
         self.ultima_publicacion = 0
         self._save_timer = None
         self.borradores = {}
-        self.respaldos_red = {}
         # Variables de estado que estaban mal ubicadas
         self.lapidas = set()
         self.alerta_espacio_mostrada = False
         self.mis_colecciones = {}
         self.colecciones_descubiertas = {}
         self.respaldos_red = {}
+        self.quien_tiene = {} # Diccionario: {articulo_id: [peer_id1, peer_id2]}
         self.coleccion_en_lectura = None
         self.indice_coleccion = 0
         self.autor_perfil_actual = None
@@ -1478,6 +1478,8 @@ class BlogP2PApp:
         self.node.on_json("sync_request", self._al_recibir_sync_request)
         self.node.on_json("sync_response", self._al_recibir_sync_response)
         self.node.on_json("like_article", self._al_recibir_like)
+        self.node.subscribe("blog:backups", self._al_recibir_backup)
+        self.node.subscribe("blog:backups_remove", self._al_recibir_backup_remove)
         self.node.on_json("save_ping", self._al_recibir_save_ping)
         self.node.on_json("tag_notification", self._al_recibir_tag_notification)
         self.node.on_json("tag_revoked", self._al_recibir_tag_revoked)
@@ -1841,6 +1843,29 @@ class BlogP2PApp:
                 self._guardar_datos()
                 if self.articulo_actual_id == articulo_id:
                     self.lbl_count.config(text=f"({len(likes)})")
+
+    def _al_recibir_backup(self, peer_id, topic, data):
+        try:
+            msg = json.loads(data.decode())
+            aid = msg.get("id")
+            dueno = msg.get("peer")
+            if aid and dueno:
+                if aid not in self.quien_tiene:
+                    self.quien_tiene[aid] = []
+                if dueno not in self.quien_tiene[aid]:
+                    self.quien_tiene[aid].append(dueno)
+        except Exception as e:
+            pass
+
+    def _al_recibir_backup_remove(self, peer_id, topic, data):
+        try:
+            msg = json.loads(data.decode())
+            aid = msg.get("id")
+            dueno = msg.get("peer")
+            if aid in self.quien_tiene and dueno in self.quien_tiene[aid]:
+                self.quien_tiene[aid].remove(dueno)
+        except Exception as e:
+            pass
 
     def _al_recibir_save_ping(self, peer_id, value):
         aid = value.get("id")
@@ -2455,12 +2480,19 @@ class BlogP2PApp:
                 self._cambiar_texto_lectura("Solicitando el artículo al autor...")
                 self._pedir_articulo_con_reintentos(autor_id, articulo_id)
             else:
-                # Si el autor NO está conectado, pedimos a toda la red (Broadcast)
-                self._cambiar_texto_lectura("El autor está desconectado.\nBuscando copias respaldadas en la red P2P...")
-                self.node.broadcast_json("get_article", {"id": articulo_id}) # Petición sin target
+                # El autor está desconectado. ¿Sabemos quién más lo tiene?
+                peers_con_copia = self.quien_tiene.get(articulo_id, [])
                 
-                # Si en 10 segundos nadie responde, mostramos un aviso
-                self.root.after(10000, lambda: self._timeout_busqueda(articulo_id))
+                if peers_con_copia:
+                    # Pedir al primero de la lista que sepamos que lo tiene
+                    peer_amigo = peers_con_copia[0]
+                    self._cambiar_texto_lectura(f"El autor está desconectado.\nSolicitando copia al nodo respaldador...")
+                    self._pedir_articulo_con_reintentos(peer_amigo, articulo_id)
+                else:
+                    # No conocemos a nadie que lo tenga. Broadcast de emergencia.
+                    self._cambiar_texto_lectura("El autor está desconectado.\nBuscando copias respaldadas en toda la red...")
+                    self.node.broadcast_json("get_article", {"id": articulo_id}) 
+                    self.root.after(10000, lambda: self._timeout_busqueda(articulo_id))
 
     def _timeout_busqueda(self, articulo_id):
         # Solo mostramos el aviso si seguimos esperando el mismo artículo
@@ -2817,6 +2849,15 @@ class BlogP2PApp:
                 self._enviar_json_seguro(autor, "save_ping", {"id": aid})
             except Exception:
                 pass
+
+        # Anunciar a toda la red que ahora tenemos una copia
+        try:
+            self.node.publish("blog:backups", json.dumps({"id": aid, "peer": self.node.local_id}).encode())
+            # Guardarlo en nuestra propia tabla
+            if aid not in self.quien_tiene: self.quien_tiene[aid] = []
+            if self.node.local_id not in self.quien_tiene[aid]: self.quien_tiene[aid].append(self.node.local_id)
+        except Exception as e:
+            print(f"Error al anunciar copia: {e}")
         
         # Refrescar la vista de lectura para mostrar el nuevo contador de respaldos
         if self.articulo_actual_id == aid:
@@ -2847,6 +2888,12 @@ class BlogP2PApp:
                     self._enviar_json_seguro(autor_del_articulo, "remove_ping", {"id": aid})
                 except Exception:
                     pass
+
+            # ¡NUEVO! Anunciar a toda la red que ya no tenemos esta copia
+            try:
+                self.node.publish("blog:backups_remove", json.dumps({"id": aid, "peer": self.node.local_id}).encode())
+            except Exception:
+                pass
 
             # Eliminamos del diccionario
             del self.articulos_guardados[aid]
