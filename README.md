@@ -18,7 +18,7 @@ BlogNet is our gift to the world, demonstrating the possibility of an internet t
 - You can tag other authors using the same tags you apply to topics; however, any tagged individual has the unilateral right to remove that tag without prior notice.
 - You have a "right to digital oblivion": if you decide that an article should no longer be available, deleting it sends a signal across the entire network. The next time a user who has saved one of your articles connects to the platform, they will receive a notification to remove that item, which will then happen automatically—no further action required.
 ## Planned features:
-- Integrate a translation engine so that articles can be read regardless of their original language (we will likely need to use the Google Translate API for this, though we prefer open-source tools whenever possible).
+- Integrate a translation engine so that articles can be read regardless of their original language (Argos translate).
 - Switch to a wxPython rendering engine for better integration with Linux and Windows.
 - Develop a version for macOS.
 - Replace the current rich-text editing and viewing system with assisted HTML to offer users more options.
