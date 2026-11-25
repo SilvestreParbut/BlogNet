@@ -926,7 +926,8 @@ class BlogP2PApp:
         frame_scroll = ttk.Frame(self.tab_descubrir)
         frame_scroll.pack(fill="both", expand=True, padx=10, pady=5)
 
-        self.canvas_descubrir = tk.Canvas(frame_scroll, bg="#f9f9f9", highlightthickness=0)
+        # yscrollincrement=15 define que cada paso del scroll son 15 píxeles (muy fluido)
+        self.canvas_descubrir = tk.Canvas(frame_scroll, bg="#f9f9f9", highlightthickness=0, yscrollincrement=15)
         scrollbar = ttk.Scrollbar(frame_scroll, orient="vertical", command=self.canvas_descubrir.yview)
         self.frame_tarjetas = ttk.Frame(self.canvas_descubrir)
 
@@ -942,10 +943,10 @@ class BlogP2PApp:
 
         # Ajustar el ancho del frame interno al ancho del canvas
         self.canvas_descubrir.bind('<Configure>', lambda e: self.canvas_descubrir.itemconfig(self.canvas_window, width=e.width))
-        # Soporte para rueda del ratón
-        self.canvas_descubrir.bind_all("<MouseWheel>", lambda e: self.canvas_descubrir.yview_scroll(int(-1*(e.delta/120)), "units"))
-        self.canvas_descubrir.bind_all("<Button-4>", lambda e: self.canvas_descubrir.yview_scroll(-1, "units"))
-        self.canvas_descubrir.bind_all("<Button-5>", lambda e: self.canvas_descubrir.yview_scroll(1, "units"))
+        # Soporte para rueda del ratón (Smooth Scroll para Linux y Windows)
+        self.canvas_descubrir.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.canvas_descubrir.bind_all("<Button-4>", self._on_mousewheel)
+        self.canvas_descubrir.bind_all("<Button-5>", self._on_mousewheel)
 
         # Paginación
         frame_paginacion = ttk.Frame(self.tab_descubrir)
@@ -959,6 +960,15 @@ class BlogP2PApp:
         
         # Lista para mantener referencias a las imágenes y que no se borren de la memoria
         self.imagenes_tarjetas = []
+
+    def _on_mousewheel(self, event):
+        # Al haber definido yscrollincrement=15, un paso del scroll moverá 15 píxeles.
+        if event.num == 4: # Scroll Up (Linux)
+            self.canvas_descubrir.yview_scroll(-1, "units")
+        elif event.num == 5: # Scroll Down (Linux)
+            self.canvas_descubrir.yview_scroll(1, "units")
+        else: # Windows / Mac
+            self.canvas_descubrir.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def _configurar_etiquetas_texto(self, text_widget):
         f_bold = font.Font(family="Helvetica", size=13, weight="bold")
@@ -2090,6 +2100,32 @@ class BlogP2PApp:
                 if self.articulo_actual_id == articulo_id:
                     self.lbl_count.config(text=f"({len(likes)})")
 
+    def _al_recibir_save_ping(self, peer_id, value):
+        aid = value.get("id")
+        if aid and aid in self.mis_articulos:
+            # --- CONVERSIÓN A PRUEBA DE BALAS ---
+            if aid not in self.respaldos_red:
+                self.respaldos_red[aid] = {}
+            elif isinstance(self.respaldos_red[aid], list):
+                self.respaldos_red[aid] = {peer: time.time() for peer in self.respaldos_red[aid]}
+            # ------------------------------------
+            
+            self.respaldos_red[aid][peer_id] = time.time()
+            self._guardar_datos()
+            
+            art = self.mis_articulos[aid]
+            anuncio = {
+                "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
+                "tematica": art["tematica"], "autor": art["autor"],
+                "autor_nombre": art.get("autor_nombre", self.nombre_usuario), 
+                "autor_descripcion": art.get("autor_descripcion", self.mi_descripcion),
+                "idioma": art.get("idioma", "Español"),
+                "is_update": True, "likes": art.get("likes", []),
+                "respaldos": len(self.respaldos_red[aid])
+            }
+            self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
+            self.event_queue.put(("actualizar_respaldos", aid))
+
     def _al_recibir_follow_ping(self, peer_id, value):
         nombre_seguidor = value.get("nombre", "Alguien")
         descripcion_seguidor = value.get("descripcion", "")
@@ -2591,12 +2627,22 @@ class BlogP2PApp:
                 continue
             articulos_filtrados.append(articulo)
 
+        # --- ORDENAMIENTO A PRUEBA DE BALAS ---
+        def obtener_timestamp(art):
+            try:
+                # Intentar extraer del ID (formato: "hash-timestamp")
+                return int(art["id"].split("-")[-1])
+            except Exception as e:
+                print(f"Error obteniendo timestamp de {art.get('id')}: {e}")
+                return 0 
+        
+        articulos_filtrados.sort(key=obtener_timestamp, reverse=True)
+        # --------------------------------------
+
         total_articulos = len(articulos_filtrados)
         total_paginas = max(1, math.ceil(total_articulos / self.articulos_por_pagina))
-        if self.pagina_actual > total_paginas:
-            self.pagina_actual = total_paginas
-        if self.pagina_actual < 1:
-            self.pagina_actual = 1
+        if self.pagina_actual > total_paginas: self.pagina_actual = total_paginas
+        if self.pagina_actual < 1: self.pagina_actual = 1
 
         # Primero calculamos el inicio y el fin de la página
         inicio = (self.pagina_actual - 1) * self.articulos_por_pagina
@@ -2605,7 +2651,8 @@ class BlogP2PApp:
         # Ahora sí, actualizamos el texto usando las variables ya definidas
         mostrando = len(articulos_filtrados[inicio:fin])
         self.lbl_paginacion.config(text=f"Página {self.pagina_actual} de {total_paginas}, mostrando {mostrando} de {total_articulos} artículos en la red")
-        
+
+        # Dibujar las tarjetas en el orden correcto
         for articulo in articulos_filtrados[inicio:fin]:
             self._crear_tarjeta_articulo(articulo)
 
@@ -2614,6 +2661,7 @@ class BlogP2PApp:
         card.pack(fill="x", pady=10, padx=10)
         card.columnconfigure(0, weight=1)
 
+        # Autor y Fecha
         autor = art.get("autor_nombre", "Desconocido")
         fecha_str = art.get("id", "").split("-")[-1]
         try:
@@ -2624,24 +2672,46 @@ class BlogP2PApp:
         lbl_autor = tk.Label(card, text=f"👤 {autor}  ·  {fecha}", font=("Helvetica", 10), bg="white", fg="#666")
         lbl_autor.grid(row=0, column=0, sticky="w")
 
+        # Título
         lbl_titulo = tk.Label(card, text=art.get("titulo", "Sin título"), font=("Helvetica", 16, "bold"), bg="white", fg="#000", wraplength=500, justify="left")
         lbl_titulo.grid(row=1, column=0, sticky="w", pady=(5, 5))
 
-        etiquetas = ", ".join(art.get("etiquetas", []))
-        lbl_resumen = tk.Label(card, text=f"{etiquetas}", font=("Helvetica", 11), bg="white", fg="#777")
-        lbl_resumen.grid(row=2, column=0, sticky="w")
+        # --- NUEVO: Vista Previa del Texto ---
+        snippet = "Abre el artículo para leer más..."
+        full_art = self.mis_articulos.get(art["id"]) or self.articulos_guardados.get(art["id"])
+        if full_art and isinstance(full_art.get("contenido"), dict):
+            texto_completo = full_art["contenido"].get("texto", "")
+            # Limpiar saltos de línea
+            texto_limpio = " ".join(texto_completo.split())
+            if len(texto_limpio) > 120:
+                snippet = texto_limpio[:120] + "..."
+            else:
+                snippet = texto_limpio
 
+        lbl_snippet = tk.Label(card, text=snippet, font=("Helvetica", 11, "italic"), bg="white", fg="#555", wraplength=500, justify="left")
+        lbl_snippet.grid(row=2, column=0, sticky="w", pady=(0, 10))
+
+        # --- NUEVO: Categoría y Etiquetas ---
+        categoria = art.get("tematica", "Sin categoría").capitalize()
+        etiquetas = ", ".join(art.get("etiquetas", []))
+        
+        texto_meta = f"Categoría: {categoria}"
+        if etiquetas:
+            texto_meta += f"   |   Etiquetas: {etiquetas}"
+            
+        lbl_meta = tk.Label(card, text=texto_meta, font=("Helvetica", 9), bg="white", fg="#888")
+        lbl_meta.grid(row=3, column=0, sticky="w")
+
+        # Métricas (Likes y Respaldos)
         likes = len(art.get("likes", []))
         respaldos = art.get("respaldos", 0)
         frame_metricas = tk.Frame(card, bg="white")
-        frame_metricas.grid(row=3, column=0, sticky="w", pady=(10, 0))
+        frame_metricas.grid(row=4, column=0, sticky="w", pady=(10, 0))
         lbl_metricas = tk.Label(frame_metricas, text=f"⭐ {likes}   ⚡ {respaldos} respaldos", font=("Helvetica", 10), bg="white", fg="#444")
         lbl_metricas.pack()
 
-        # --- NUEVO: Búsqueda de imagen de vista previa ---
+        # --- Imagen de vista previa ---
         imagen_b64 = None
-        # Buscamos si tenemos el contenido completo en memoria (porque lo escribimos o descargamos)
-        full_art = self.mis_articulos.get(art["id"]) or self.articulos_guardados.get(art["id"])
         if full_art and isinstance(full_art.get("contenido"), dict):
             imgs = full_art["contenido"].get("imagenes", {})
             if imgs:
@@ -2655,27 +2725,19 @@ class BlogP2PApp:
                 photo = ImageTk.PhotoImage(img)
                 self.imagenes_tarjetas.append(photo)
                 lbl_img = tk.Label(card, image=photo, bg="white")
-                lbl_img.grid(row=0, column=1, rowspan=4, padx=(20, 0), sticky="e")
+                lbl_img.grid(row=0, column=1, rowspan=5, padx=(20, 0), sticky="e")
             except: pass
 
-        # --- NUEVO: Efecto Hover Orgánico ---
+        # --- Efecto Hover Orgánico ---
         def on_enter(e):
-            card.configure(bg="#f0f0f0")
-            lbl_autor.configure(bg="#f0f0f0")
-            lbl_titulo.configure(bg="#f0f0f0")
-            lbl_resumen.configure(bg="#f0f0f0")
-            frame_metricas.configure(bg="#f0f0f0")
-            lbl_metricas.configure(bg="#f0f0f0")
+            for w in [card, lbl_autor, lbl_titulo, lbl_snippet, lbl_meta, frame_metricas, lbl_metricas]:
+                w.configure(bg="#f0f0f0")
 
         def on_leave(e):
-            card.configure(bg="white")
-            lbl_autor.configure(bg="white")
-            lbl_titulo.configure(bg="white")
-            lbl_resumen.configure(bg="white")
-            frame_metricas.configure(bg="white")
-            lbl_metricas.configure(bg="white")
+            for w in [card, lbl_autor, lbl_titulo, lbl_snippet, lbl_meta, frame_metricas, lbl_metricas]:
+                w.configure(bg="white")
 
-        for widget in [card, lbl_autor, lbl_titulo, lbl_resumen, frame_metricas, lbl_metricas]:
+        for widget in [card, lbl_autor, lbl_titulo, lbl_snippet, lbl_meta, frame_metricas, lbl_metricas]:
             widget.bind("<Button-1>", lambda e, a=art: self._abrir_por_id(a["id"]))
             widget.bind("<Enter>", on_enter)
             widget.bind("<Leave>", on_leave)
