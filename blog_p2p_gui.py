@@ -449,6 +449,8 @@ class BlogP2PApp:
         self.entrada_nombre.insert(0, self.nombre_usuario)
         self.texto_desc_perfil.delete("1.0", "end")
         self.texto_desc_perfil.insert("1.0", self.mi_descripcion)
+        self.entrada_horario.delete(0, "end")
+        self.entrada_horario.insert(0, self.mi_horario)
         self._refrescar_guardados()
         self._refrescar_autores()
         self._aplicar_filtro()
@@ -1194,13 +1196,15 @@ class BlogP2PApp:
         self.texto_desc_perfil = tk.Text(frame_perfil, height=3, wrap="word", bg="white", fg="black", font=("Helvetica", 10))
         self.texto_desc_perfil.pack(fill="x", pady=(0, 5))
         self._configurar_portapapeles(self.texto_desc_perfil)
-        ttk.Label(frame_perfil, text="Horario de conexión (ej. 18:00 a 22:00):").pack(anchor="w")
+        ttk.Label(frame_perfil, text="Horario de conexión (ej. 18:00 - 22:00):").pack(anchor="w")
         self.entrada_horario = ttk.Entry(frame_perfil)
         self.entrada_horario.pack(fill="x", pady=(0, 5))
         self._configurar_portapapeles(self.entrada_horario)
         
         tip_gmt = ttk.Label(frame_perfil, text="Sugerencia: El sistema traducirá esta hora automáticamente a la hora local de quien visite tu perfil.", font=("TkDefaultFont", 9, "italic"), foreground="#555555")
         tip_gmt.pack(anchor="w", pady=(0, 10))
+
+        ttk.Button(frame_perfil, text=self._t("Guardar Perfil"), command=self._actualizar_nombre).pack(anchor="e")
 
         ttk.Label(frame_izq, text=self._t("Mis artículos publicados"), font=("TkDefaultFont", 12, "bold")).pack(anchor="w", pady=(10, 5))
         
@@ -1642,10 +1646,16 @@ class BlogP2PApp:
         import time
         self.mi_utc_offset = -time.timezone / 3600.0
         self.mi_horario = nuevo_horario
+        
         if nuevo:
             self.nombre_usuario = nuevo
             self.mi_descripcion = nueva_desc
-            self.perfiles_autores[self.node.local_id] = {"nombre": self.nombre_usuario, "descripcion": self.mi_descripcion}
+            self.perfiles_autores[self.node.local_id] = {
+                "nombre": self.nombre_usuario, 
+                "descripcion": self.mi_descripcion,
+                "horario": self.mi_horario,
+                "utc_offset": self.mi_utc_offset
+            }
             
             for art in self.mis_articulos.values():
                 art["autor_nombre"] = self.nombre_usuario
