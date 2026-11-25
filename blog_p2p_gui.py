@@ -1193,7 +1193,11 @@ class BlogP2PApp:
         frame_izq = ttk.Frame(self.tab_leyendo)
         frame_izq.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
         frame_izq.columnconfigure(0, weight=1)
-        frame_izq.rowconfigure(7, weight=1) 
+        
+        # LA MAGIA: Hacemos que las 3 filas de las listas (3, 5 y 8) compartan el espacio equitativamente
+        frame_izq.rowconfigure(3, weight=1) # Fila de Autores
+        frame_izq.rowconfigure(5, weight=1) # Fila de Guardados
+        frame_izq.rowconfigure(8, weight=1) # Fila de Recientes
 
         fila = 0
         ttk.Label(frame_izq, text=self._t("Almacenamiento"), font=("TkDefaultFont", 10, "bold")).grid(row=fila, column=0, sticky="w"); fila+=1
@@ -1207,18 +1211,16 @@ class BlogP2PApp:
         ttk.Button(frame_espacio, text=self._t("Cambiar límite"), command=self._cambiar_limite).pack(anchor="e")
 
         ttk.Label(frame_izq, text=self._t("Autores seguidos"), font=("TkDefaultFont", 10, "bold")).grid(row=fila, column=0, sticky="w"); fila+=1
-        self.lista_autores = tk.Listbox(frame_izq, height=4)
-        self.lista_autores.grid(row=fila, column=0, sticky="ew", pady=(2, 10)); fila+=1
+        self.lista_autores = tk.Listbox(frame_izq, height=1) # Altura inicial mínima
+        self.lista_autores.grid(row=fila, column=0, sticky="nsew", pady=(2, 10)); fila+=1
         self.lista_autores.bind("<<ListboxSelect>>", self._al_seleccionar_autor)
         self.lista_autores.bind("<Double-1>", self._abrir_autor_seleccionado_doble_clic)
 
         ttk.Label(frame_izq, text=self._t("Artículos guardados"), font=("TkDefaultFont", 10, "bold")).grid(row=fila, column=0, sticky="w"); fila+=1
-        self.lista_guardados = tk.Listbox(frame_izq, height=4)
-        self.lista_guardados.grid(row=fila, column=0, sticky="ew", pady=(2, 5)); fila+=1
+        self.lista_guardados = tk.Listbox(frame_izq, height=1) # Altura inicial mínima
+        self.lista_guardados.grid(row=fila, column=0, sticky="nsew", pady=(2, 5)); fila+=1
         self.lista_guardados.bind("<Double-1>", self._abrir_guardado_doble_clic)
         
-        frame_btn_borrar = ttk.Frame(frame_izq)
-        frame_btn_borrar.grid(row=fila, column=0, sticky="e", pady=(0, 10)); fila+=1
         frame_btn_borrar = ttk.Frame(frame_izq)
         frame_btn_borrar.grid(row=fila, column=0, sticky="ew", pady=(0, 10)); fila+=1
         ttk.Button(frame_btn_borrar, text="Borrar", command=self._borrar_guardado).pack(side="left", padx=2)
@@ -1227,7 +1229,7 @@ class BlogP2PApp:
         self.etiqueta_titulo_recientes = ttk.Label(frame_izq, text=self._t("Recientes de seguidos"), font=("TkDefaultFont", 10, "bold"))
         self.etiqueta_titulo_recientes.grid(row=fila, column=0, sticky="w"); fila+=1
         
-        self.lista_recientes = tk.Listbox(frame_izq, height=10)
+        self.lista_recientes = tk.Listbox(frame_izq, height=1) # Altura inicial mínima
         self.lista_recientes.grid(row=fila, column=0, sticky="nsew", pady=(2, 0))
         self.lista_recientes.bind("<Double-1>", self._abrir_reciente_doble_clic)
 
