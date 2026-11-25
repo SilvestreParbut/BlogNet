@@ -1851,7 +1851,15 @@ class BlogP2PApp:
 
     def _al_recibir_follow_ping(self, peer_id, value):
         nombre_seguidor = value.get("nombre", "Alguien")
+        descripcion_seguidor = value.get("descripcion", "")
         tipo = value.get("tipo", "seguir") # "seguir" o "respaldar"
+        
+        # ¡LA SOLUCIÓN! Guardamos su perfil para que cuando hagamos doble clic, sepa quién es.
+        self.perfiles_autores[peer_id] = {
+            "nombre": nombre_seguidor,
+            "descripcion": descripcion_seguidor
+        }
+        self._guardar_datos()
         
         texto_aviso = f"👤 {nombre_seguidor} te ha empezado a {tipo}"
         
@@ -2976,7 +2984,11 @@ class BlogP2PApp:
         # --- NUEVO: Enviar el aviso de seguimiento al autor ---
         try:
             tipo_aviso = "respaldar" if respaldar else "seguir"
-            self._enviar_json_seguro(autor, "follow_ping", {"nombre": self.nombre_usuario, "tipo": tipo_aviso})
+            self._enviar_json_seguro(autor, "follow_ping", {
+                "nombre": self.nombre_usuario, 
+                "descripcion": self.mi_descripcion,
+                "tipo": tipo_aviso
+            })
         except Exception as e:
             print(f"No se pudo enviar el aviso de seguimiento: {e}")
         # -----------------------------------------------------
