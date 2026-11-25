@@ -1254,9 +1254,10 @@ class BlogP2PApp:
         self.lbl_nombre_autor.pack(pady=(0, 10))
 
         self.texto_desc_autor = tk.Text(frame_principal, height=4, wrap="word", bg="white", fg="black", font=("Helvetica", 12), relief="solid", bd=1, state="disabled")
-        self.texto_desc_autor.pack(fill="x", pady=(0, 15))
+        self.texto_desc_autor.pack(fill="x", pady=(0, 5))
+        
         self.lbl_horario_autor = ttk.Label(frame_principal, text="", font=("TkDefaultFont", 10, "bold"), foreground="#005a9e")
-        # No lo empaquetamos aquí, se hará en _abrir_perfil_autor
+        self.lbl_horario_autor.pack(anchor="w", pady=(0, 15))
 
         ttk.Label(frame_principal, text=self._t("Artículos publicados (más recientes primero):"), font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
         columnas = ("titulo", "categoria", "fecha")
@@ -1535,11 +1536,15 @@ class BlogP2PApp:
         articulos.sort(key=lambda x: x["id"], reverse=True)
         catalogo = []
         for art in articulos:
+        catalogo = []
+        for art in articulos:
             catalogo.append({
                 "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
                 "tematica": art["tematica"], "autor": art["autor"],
                 "autor_nombre": art.get("autor_nombre", "Usuario Anónimo"),
                 "autor_descripcion": art.get("autor_descripcion", ""),
+                "autor_horario": art.get("autor_horario", ""),           # <--- AÑADIR ESTO
+                "autor_utc_offset": art.get("autor_utc_offset", 0.0),    # <--- AÑADIR ESTO
                 "idioma": art.get("idioma", "Español"),
                 "likes": art.get("likes", []),
                 "respaldos": len(self.respaldos_red.get(art["id"], []))
@@ -1586,7 +1591,12 @@ class BlogP2PApp:
             for anuncio in catalogo:
                 if anuncio["id"] not in self.lapidas:
                     if "autor_descripcion" in anuncio and "autor" in anuncio:
-                        self.perfiles_autores[anuncio["autor"]] = {"nombre": anuncio.get("autor_nombre", ""), "descripcion": anuncio["autor_descripcion"]}
+                        self.perfiles_autores[anuncio["autor"]] = {
+                            "nombre": anuncio.get("autor_nombre", ""), 
+                            "descripcion": anuncio["autor_descripcion"],
+                            "horario": anuncio.get("autor_horario", ""),
+                            "utc_offset": anuncio.get("autor_utc_offset", 0.0)
+                        }
                     self.event_queue.put(("nuevo_articulo", anuncio))
                     
         elif isinstance(value, list):
@@ -1660,6 +1670,8 @@ class BlogP2PApp:
             for art in self.mis_articulos.values():
                 art["autor_nombre"] = self.nombre_usuario
                 art["autor_descripcion"] = self.mi_descripcion
+                art["autor_horario"] = self.mi_horario           # <--- AÑADIR ESTO
+                art["autor_utc_offset"] = self.mi_utc_offset     # <--- AÑADIR ESTO
                 
             self._guardar_datos()
             
@@ -1740,6 +1752,8 @@ class BlogP2PApp:
             "tematica": tematica, "contenido": contenido_rico,
             "autor": self.node.local_id, "autor_nombre": self.nombre_usuario,
             "autor_descripcion": self.mi_descripcion,
+            "autor_horario": self.mi_horario,           # <--- AÑADIR ESTO
+            "autor_utc_offset": self.mi_utc_offset,     # <--- AÑADIR ESTO
             "idioma": idioma_final,
             "likes": []
         }
@@ -1748,13 +1762,14 @@ class BlogP2PApp:
             "id": articulo_id, "titulo": titulo, "etiquetas": lista_etiquetas,
             "tematica": tematica, "autor": self.node.local_id, "autor_nombre": self.nombre_usuario,
             "autor_descripcion": self.mi_descripcion,
+            "autor_horario": self.mi_horario,           # <--- AÑADIR ESTO
+            "autor_utc_offset": self.mi_utc_offset,     # <--- AÑADIR ESTO
             "idioma": idioma_final,
             "is_update": True if self.editando_id else False,
             "likes": [],
-            "host": self._obtener_ip_local(),   # NUEVO: IP para conectar
-            "port": self.node.listen_port       # NUEVO: puerto de escucha
+            "host": self._obtener_ip_local(),
+            "port": self.node.listen_port
         }
-
         # Si el autor tiene este artículo en sus guardados, actualizar su contenido también
         if articulo_id in self.articulos_guardados:
             self.articulos_guardados[articulo_id]["contenido"] = contenido_rico
@@ -2194,8 +2209,10 @@ class BlogP2PApp:
             "likes": art.get("likes", []), "etiquetas": art.get("etiquetas", []),
             "tematica": art.get("tematica", ""), "autor": art.get("autor", self.node.local_id),
             "autor_nombre": autor_nombre, "autor_descripcion": autor_desc,
+            "autor_horario": art.get("autor_horario", ""),           # <--- AÑADIR ESTO
+            "autor_utc_offset": art.get("autor_utc_offset", 0.0),    # <--- AÑADIR ESTO
             "idioma": art.get("idioma", "Español"),
-            "respaldos": len(self.respaldos_red.get(articulo_id, [])) # <-- NUEVO
+            "respaldos": len(self.respaldos_red.get(articulo_id, []))
         })
 
     def _procesar_lapida(self, aid):
