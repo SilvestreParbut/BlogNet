@@ -1631,8 +1631,15 @@ class BlogP2PApp:
         except Exception as e:
             print(f"Nota: no se pudo activar el log de conexiones: {e}")
 
+        # Suscribirse al tema del mes actual y al del mes pasado (para no perder artículos recientes)
+        import datetime
+        ahora = datetime.datetime.now()
+        mes_actual = ahora.strftime("%Y-%m")
+        mes_pasado = (ahora.replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m")
+        
         for tematica in TEMATICAS:
-            self.node.subscribe(f"blog:tematica:{tematica}", self._al_recibir_anuncio)
+            self.node.subscribe(f"blog:tematica:{tematica}:{mes_actual}", self._al_recibir_anuncio)
+            self.node.subscribe(f"blog:tematica:{tematica}:{mes_pasado}", self._al_recibir_anuncio)
 
         self.node.on_json("get_article", self._al_pedir_articulo)
         self.node.on_json("article_content", self._al_recibir_contenido)
@@ -1650,6 +1657,13 @@ class BlogP2PApp:
 
     def _al_conectar_peer(self, peer_id):
         print(f"🟢 ¡NUEVO PAR CONECTADO!: {peer_id[:12]}...")
+        
+        # Actualizar la hora de última conexión de este peer
+        if peer_id not in self.perfiles_autores:
+            self.perfiles_autores[peer_id] = {}
+        self.perfiles_autores[peer_id]["ultima_conexion"] = time.time()
+        self._guardar_datos()
+
         self._enviar_json_seguro(peer_id, "get_collections", {})
         # Pedimos el catálogo y enviamos nuestras lápidas
         self._enviar_json_seguro(peer_id, "sync_request", {"lapidas": list(self.lapidas)})
@@ -1940,9 +1954,12 @@ class BlogP2PApp:
                         self._enviar_json_seguro(autor_id, "tag_notification", notif)
         # -------------------------------------------------------------
 
-        self.node.publish(f"blog:tematica:{tematica}", json.dumps(anuncio).encode())
+        import datetime
+        mes_actual = datetime.datetime.now().strftime("%Y-%m")
+        
+        self.node.publish(f"blog:tematica:{tematica}:{mes_actual}", json.dumps(anuncio).encode())
         for etiqueta in lista_etiquetas:
-            self.node.publish(f"blog:etiqueta:{etiqueta.lower()}", json.dumps(anuncio).encode())
+            self.node.publish(f"blog:etiqueta:{etiqueta.lower()}:{mes_actual}", json.dumps(anuncio).encode())
 
         self._agregar_a_lista(anuncio)
         self._guardar_datos()
@@ -3481,39 +3498,35 @@ class BlogP2PApp:
         if not desc:
             desc = "Este autor aún no ha escrito una descripción."
         
-        # Cargar datos locales si es mi propio perfil
         if autor_id == self.node.local_id:
             nombre = self.nombre_usuario
             desc = self.mi_descripcion if self.mi_descripcion else "Aún no has escrito una descripción."
-            horario_autor = self.mi_horario
-            utc_autor = self.mi_utc_offset
-        else:
-            horario_autor = perfil.get("horario", "")
-            utc_autor = perfil.get("utc_offset", 0.0)
 
         self.lbl_nombre_autor.config(text=nombre)
-        ultima_vez = self.perfiles_autores.get(autor_id, {}).get("ultima_conexion", 0)
+        
+        # --- LÓGICA DE ESTADO DE CONEXIÓN ---
         if autor_id == self.node.local_id:
             self.lbl_estado_conexion.config(text="Tú (en línea ahora)", foreground="green")
-        elif ultima_vez > 0:
-            import datetime
-            dt_local = datetime.datetime.fromtimestamp(ultima_vez)
-            self.lbl_estado_conexion.config(text=f"Activo por última vez: {dt_local.strftime('%d/%m/%Y a las %H:%M')}", foreground="black")
+        elif hasattr(self, '_esta_conectado') and self._esta_conectado(autor_id):
+            self.lbl_estado_conexion.config(text="🟢 En línea ahora", foreground="green")
         else:
-            self.lbl_estado_conexion.config(text="Estado de conexión desconocido", foreground="gray")
-        
+            horario_autor = perfil.get("horario", "")
+            if horario_autor:
+                self.lbl_estado_conexion.config(text=f"🕒 Suele conectarse: {horario_autor}", foreground="#555")
+            else:
+                ultima_vez = perfil.get("ultima_conexion", 0)
+                if ultima_vez > 0:
+                    import datetime
+                    dt_local = datetime.datetime.fromtimestamp(ultima_vez)
+                    self.lbl_estado_conexion.config(text=f"Activo por última vez: {dt_local.strftime('%d/%m/%Y a las %H:%M')}", foreground="gray")
+                else:
+                    self.lbl_estado_conexion.config(text="Estado de conexión desconocido", foreground="gray")
+        # -----------------------------------
+
         self.texto_desc_autor.config(state="normal")
         self.texto_desc_autor.delete("1.0", "end")
         self.texto_desc_autor.insert("1.0", desc)
         self.texto_desc_autor.config(state="disabled")
-        
-        # MOSTRAR U OCULTAR EL HORARIO
-        if horario_autor:
-            texto_traducido = self._traducir_horario(horario_autor, utc_autor)
-            self.lbl_horario_autor.config(text=f"🕒 Horario de conexión: {texto_traducido}")
-            self.lbl_horario_autor.pack(anchor="w", pady=(0, 10))
-        else:
-            self.lbl_horario_autor.pack_forget()
         
         # --- ARTÍCULOS ---
         for item in self.lista_articulos_autor.get_children():
