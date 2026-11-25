@@ -1290,17 +1290,21 @@ class BlogP2PApp:
         if not sel: return
         
         notif = self.notificaciones_etiquetas[sel[0]]
-        aid = notif["articulo_id"]
         
-        # Si el artículo no está en la lista de descubiertos (porque llegó el aviso pero no el anuncio),
-        # lo creamos con los datos del aviso para que _abrir_por_id pueda encontrarlo y pedirlo.
+        # Si el aviso es de un nuevo seguidor, abrimos su perfil
+        if notif.get("es_seguidor"):
+            self._abrir_perfil_autor(notif["autor"])
+            return
+            
+        # Si es una etiqueta, abrimos el artículo
+        aid = notif["articulo_id"]
         if not any(a["id"] == aid for a in self.articulos_descubiertos):
             anuncio_temporal = {
                 "id": aid,
                 "titulo": notif["titulo"],
                 "autor": notif["autor"],
                 "autor_nombre": notif["autor_nombre"],
-                "etiquetas": [self.nombre_usuario], # Asumimos que el aviso es porque nos etiquetaron
+                "etiquetas": [self.nombre_usuario],
                 "tematica": "",
                 "likes": []
             }
@@ -1485,6 +1489,7 @@ class BlogP2PApp:
         self.node.on_json("tag_revoked", self._al_recibir_tag_revoked)
         self.node.subscribe("blog:colecciones", self._al_recibir_coleccion)
         self.node.on_json("collection_downloaded", self._al_recibir_coleccion_descargada)
+        self.node.on_json("follow_ping", self._al_recibir_follow_ping)
 
     def _al_conectar_peer(self, peer_id):
         print(f"🟢 ¡NUEVO PAR CONECTADO!: {peer_id[:12]}...")
@@ -1843,6 +1848,27 @@ class BlogP2PApp:
                 self._guardar_datos()
                 if self.articulo_actual_id == articulo_id:
                     self.lbl_count.config(text=f"({len(likes)})")
+
+    def _al_recibir_follow_ping(self, peer_id, value):
+        nombre_seguidor = value.get("nombre", "Alguien")
+        tipo = value.get("tipo", "seguir") # "seguir" o "respaldar"
+        
+        texto_aviso = f"👤 {nombre_seguidor} te ha empezado a {tipo}"
+        
+        notif = {
+            "articulo_id": f"perfil-{peer_id}", # Usamos un ID falso para que el doble clic sepa que es un perfil
+            "titulo": texto_aviso,
+            "autor": peer_id,
+            "autor_nombre": nombre_seguidor,
+            "es_seguidor": True  # <-- Bandera para saber que es un perfil
+        }
+        
+        if not any(n["articulo_id"] == notif["articulo_id"] for n in self.notificaciones_etiquetas):
+            self.notificaciones_etiquetas.append(notif)
+            self._guardar_datos()
+            self.root.after(0, self._refrescar_notificaciones)
+            self.root.after(0, lambda: self.notebook.tab(self.tab_notificaciones, text="Avisos (¡Nuevo!)"))
+            print(f"🔔 Nuevo seguidor: {nombre_seguidor}")
 
     def _al_recibir_backup(self, peer_id, topic, data):
         try:
@@ -2947,6 +2973,13 @@ class BlogP2PApp:
                 if art["autor"] == autor and art["id"] not in self.articulos_guardados:
                     self.respaldos_pendientes.add(art["id"])
                     self._enviar_json_seguro(autor, "get_article", {"id": art["id"]})
+        # --- NUEVO: Enviar el aviso de seguimiento al autor ---
+        try:
+            tipo_aviso = "respaldar" if respaldar else "seguir"
+            self._enviar_json_seguro(autor, "follow_ping", {"nombre": self.nombre_usuario, "tipo": tipo_aviso})
+        except Exception as e:
+            print(f"No se pudo enviar el aviso de seguimiento: {e}")
+        # -----------------------------------------------------
             messagebox.showinfo("Respaldando", "Has empezado a respaldar a este autor. Sus artículos se están descargando.")
 
         self._refrescar_autores()
