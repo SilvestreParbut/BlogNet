@@ -898,8 +898,9 @@ class BlogP2PApp:
         self.tab_descubrir = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_descubrir, text=self._t("Descubrir"))
 
+        # Filtros
         frame_filtros = ttk.Frame(self.tab_descubrir)
-        frame_filtros.pack(fill="x", padx=5, pady=5)
+        frame_filtros.pack(fill="x", padx=10, pady=10)
 
         ttk.Label(frame_filtros, text=self._t("Categoría:")).pack(side="left")
         self.combo_filtro_categoria = ttk.Combobox(frame_filtros, values=[self._t("Todas")] + TEMATICAS, state="readonly", width=15)
@@ -918,34 +919,46 @@ class BlogP2PApp:
         self.combo_filtro_idioma.pack(side="left", padx=5)
         self.combo_filtro_idioma.bind("<<ComboboxSelected>>", lambda e: self._reiniciar_paginacion())
 
-        ttk.Button(frame_filtros, text=self._t("Buscar"), command=self._reiniciar_paginacion).pack(side="left")
+        ttk.Button(frame_filtros, text=self._t("Buscar"), command=self._reiniciar_paginacion).pack(side="left", padx=5)
         ttk.Button(frame_filtros, text="¡Sorpréndeme!", command=self._sorprendeme).pack(side="left", padx=(15, 0))
 
-        columnas = ("titulo", "etiquetas", "categoria", "autor")
-        self.lista_articulos = ttk.Treeview(self.tab_descubrir, columns=columnas, show="headings", height=20)
-        self.lista_articulos.heading("titulo", text=self._t("Título"))
-        self.lista_articulos.heading("etiquetas", text=self._t("Etiquetas:"))
-        self.lista_articulos.heading("categoria", text=self._t("Categoría"))
-        self.lista_articulos.heading("autor", text=self._t("Autores"))
-        self.lista_articulos.column("titulo", width=350)
-        self.lista_articulos.column("etiquetas", width=220)
-        self.lista_articulos.column("categoria", width=120)
-        self.lista_articulos.column("autor", width=180)
-        self.lista_articulos.pack(fill="both", expand=True, padx=5, pady=5)
-        self.lista_articulos.bind("<Double-1>", self._abrir_articulo_doble_clic)
+        # Lienzo y Barra de Desplazamiento (Scroll)
+        frame_scroll = ttk.Frame(self.tab_descubrir)
+        frame_scroll.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # --- NUEVO: Controles de Paginación ---
+        self.canvas_descubrir = tk.Canvas(frame_scroll, bg="#f9f9f9", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(frame_scroll, orient="vertical", command=self.canvas_descubrir.yview)
+        self.frame_tarjetas = ttk.Frame(self.canvas_descubrir)
+
+        self.frame_tarjetas.bind(
+            "<Configure>",
+            lambda e: self.canvas_descubrir.configure(scrollregion=self.canvas_descubrir.bbox("all"))
+        )
+        self.canvas_window = self.canvas_descubrir.create_window((0, 0), window=self.frame_tarjetas, anchor="nw")
+        self.canvas_descubrir.configure(yscrollcommand=scrollbar.set)
+
+        self.canvas_descubrir.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Ajustar el ancho del frame interno al ancho del canvas
+        self.canvas_descubrir.bind('<Configure>', lambda e: self.canvas_descubrir.itemconfig(self.canvas_window, width=e.width))
+        # Soporte para rueda del ratón
+        self.canvas_descubrir.bind_all("<MouseWheel>", lambda e: self.canvas_descubrir.yview_scroll(int(-1*(e.delta/120)), "units"))
+        self.canvas_descubrir.bind_all("<Button-4>", lambda e: self.canvas_descubrir.yview_scroll(-1, "units"))
+        self.canvas_descubrir.bind_all("<Button-5>", lambda e: self.canvas_descubrir.yview_scroll(1, "units"))
+
+        # Paginación
         frame_paginacion = ttk.Frame(self.tab_descubrir)
         frame_paginacion.pack(fill="x", padx=5, pady=5)
-        
         self.btn_pag_anterior = ttk.Button(frame_paginacion, text="◀ Anterior", command=self._pagina_anterior)
         self.btn_pag_anterior.pack(side="left", padx=10)
-        
         self.lbl_paginacion = ttk.Label(frame_paginacion, text="Página 1 de 1", font=("TkDefaultFont", 10, "bold"))
         self.lbl_paginacion.pack(side="left", expand=True)
-        
         self.btn_pag_siguiente = ttk.Button(frame_paginacion, text="Siguiente ▶", command=self._pagina_siguiente)
         self.btn_pag_siguiente.pack(side="right", padx=10)
+        
+        # Lista para mantener referencias a las imágenes y que no se borren de la memoria
+        self.imagenes_tarjetas = []
 
     def _configurar_etiquetas_texto(self, text_widget):
         f_bold = font.Font(family="Helvetica", size=13, weight="bold")
@@ -1272,7 +1285,7 @@ class BlogP2PApp:
         self.btn_quitar_etiqueta = tk.Button(self.frame_botones_lectura, text="Quitarme la etiqueta", bg="#d9534f", fg="white", font=("TkDefaultFont", 9, "bold"), command=self._quitar_etiqueta_actual)
 
         # 2. Likes
-        self.lbl_heart = tk.Label(self.frame_botones_lectura, text="❤️", font=("Helvetica", 16), fg="red", cursor="hand2")
+        self.lbl_heart = tk.Label(self.frame_botones_lectura, text="⭐", font=("Helvetica", 16), fg="#D4AF37", cursor="hand2")
         self.lbl_count = tk.Label(self.frame_botones_lectura, text="(0)", font=("Helvetica", 13, "bold"), fg="black", cursor="hand2")
         self.lbl_heart.bind("<Button-1>", self._dar_me_gusta)
         self.lbl_count.bind("<Button-1>", self._dar_me_gusta)
@@ -1371,13 +1384,13 @@ class BlogP2PApp:
         frame_principal.pack(fill="both", expand=True, padx=20, pady=20)
 
         self.lbl_nombre_autor = ttk.Label(frame_principal, text=self._t("Selecciona un autor"), font=("TkDefaultFont", 16, "bold"))
-        self.lbl_nombre_autor.pack(pady=(0, 10))
+        self.lbl_nombre_autor.pack(pady=(0, 5))
+
+        self.lbl_estado_conexion = ttk.Label(frame_principal, text="", font=("TkDefaultFont", 10, "italic"), foreground="gray")
+        self.lbl_estado_conexion.pack(pady=(0, 10))
 
         self.texto_desc_autor = tk.Text(frame_principal, height=4, wrap="word", bg="white", fg="black", font=("Helvetica", 12), relief="solid", bd=1, state="disabled")
-        self.texto_desc_autor.pack(fill="x", pady=(0, 5))
-        
-        self.lbl_horario_autor = ttk.Label(frame_principal, text="", font=("TkDefaultFont", 10, "bold"), foreground="#005a9e")
-        self.lbl_horario_autor.pack(anchor="w", pady=(0, 15))
+        self.texto_desc_autor.pack(fill="x", pady=(0, 15))
 
         ttk.Label(frame_principal, text=self._t("Artículos publicados (más recientes primero):"), font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
         columnas = ("titulo", "categoria", "fecha")
@@ -1391,7 +1404,6 @@ class BlogP2PApp:
         self.lista_articulos_autor.pack(fill="both", expand=True, pady=5)
         self.lista_articulos_autor.bind("<Double-1>", lambda e: self._abrir_articulo_doble_clic_autor(e))
 
-        # --- NUEVO: Lista de Colecciones ---
         ttk.Label(frame_principal, text="Colecciones públicas de este autor:", font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=(10, 0))
         self.lista_colecciones_autor = ttk.Treeview(frame_principal, columns=("titulo", "descargas"), show="headings", height=6)
         self.lista_colecciones_autor.heading("titulo", text="Título de la Colección")
@@ -1400,10 +1412,11 @@ class BlogP2PApp:
         self.lista_colecciones_autor.column("descargas", width=150)
         self.lista_colecciones_autor.pack(fill="both", expand=True, pady=5)
         self.lista_colecciones_autor.bind("<Double-1>", self._abrir_coleccion_detalle_desde_perfil)
-        # ---------------------------------
 
         frame_btns_autor = ttk.Frame(frame_principal)
         frame_btns_autor.pack(fill="x", pady=(10, 0))
+        ttk.Button(frame_btns_autor, text="Seguir", command=self._seguir_autor_actual).pack(side="left", padx=5)
+        ttk.Button(frame_btns_autor, text="Seguir y Respaldar", command=self._seguir_y_respaldar).pack(side="left", padx=5)
         ttk.Button(frame_btns_autor, text="Dejar de seguir", command=self._dejar_de_seguir).pack(side="left", padx=5)
         ttk.Button(frame_btns_autor, text="Dejar de respaldar", command=self._dejar_de_respaldar).pack(side="left", padx=5)
 
@@ -1733,20 +1746,22 @@ class BlogP2PApp:
         ids_respaldados = set(ids_respaldados)
         actualizado = False
         afectados = []
+        ahora = time.time()
         
         for aid in self.mis_articulos:
+            if aid not in self.respaldos_red:
+                self.respaldos_red[aid] = {}
+                
             if aid in ids_respaldados:
-                # El otro equipo SÍ tiene el artículo
-                if aid not in self.respaldos_red:
-                    self.respaldos_red[aid] = []
                 if peer_id not in self.respaldos_red[aid]:
-                    self.respaldos_red[aid].append(peer_id)
+                    self.respaldos_red[aid][peer_id] = ahora
                     actualizado = True
                     afectados.append(aid)
+                else:
+                    self.respaldos_red[aid][peer_id] = ahora # Actualiza la hora
             else:
-                # El otro equipo NO tiene el artículo (lo borró)
-                if aid in self.respaldos_red and peer_id in self.respaldos_red[aid]:
-                    self.respaldos_red[aid].remove(peer_id)
+                if peer_id in self.respaldos_red[aid]:
+                    del self.respaldos_red[aid][peer_id]
                     actualizado = True
                     afectados.append(aid)
         
@@ -1764,7 +1779,6 @@ class BlogP2PApp:
                     "respaldos": len(self.respaldos_red[aid])
                 }
                 self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
-                
             self.event_queue.put(("actualizar_respaldos", self.articulo_actual_id))
 
     # --- PUBLICAR Y LIKES ---
@@ -2018,6 +2032,7 @@ class BlogP2PApp:
             messagebox.showinfo("Ya votaste", "Ya le has dado 'Me gusta' a este artículo.")
             return
 
+        # 1. Guardar el like localmente
         likes_actuales.append(self.node.local_id)
         anuncio["likes"] = likes_actuales
         
@@ -2025,8 +2040,20 @@ class BlogP2PApp:
         if self.articulo_actual_id in self.articulos_guardados:
             self.articulos_guardados[self.articulo_actual_id]["likes"] = likes_actuales
             
-        self._enviar_json_seguro(anuncio["autor"], "like_article", {"id": self.articulo_actual_id, "peer": self.node.local_id})
         self._guardar_datos()
+        
+        # 2. ¡LA MAGIA! Refrescar la lista de Descubrir para que la estrella (⭐) suba a 1
+        self._aplicar_filtro()
+
+        # 3. Enviar al autor de forma silenciosa (sin ventanas de error si está desconectado)
+        from librats_py.exceptions import RatsNoSuchPeerError
+        try:
+            self.node.send_json(anuncio["autor"], "like_article", {"id": self.articulo_actual_id, "peer": self.node.local_id})
+            print("⭐ Like enviado al autor.")
+        except RatsNoSuchPeerError:
+            print(f"⭐ Like guardado localmente. El autor {anuncio['autor'][:8]} está offline, se enviará cuando vuelva a conectarse.")
+        except Exception as e:
+            print(f"Error enviando like: {e}")
 
     def _al_recibir_like(self, peer_id, value):
         articulo_id = value.get("id")
@@ -2097,27 +2124,24 @@ class BlogP2PApp:
         aid = value.get("id")
         if aid and aid in self.mis_articulos:
             if aid not in self.respaldos_red:
-                self.respaldos_red[aid] = []
-            if peer_id not in self.respaldos_red[aid]:
-                self.respaldos_red[aid].append(peer_id)
-                self._guardar_datos()
-                print(f"💾 Nodo {peer_id[:8]}... está respaldando tu artículo {aid}")
-                
-                # ¡NUEVO! Re-publicar el anuncio para avisar a toda la red del nuevo respaldo
-                art = self.mis_articulos[aid]
-                anuncio = {
-                    "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
-                    "tematica": art["tematica"], "autor": art["autor"],
-                    "autor_nombre": art.get("autor_nombre", self.nombre_usuario), 
-                    "autor_descripcion": art.get("autor_descripcion", self.mi_descripcion),
-                    "idioma": art.get("idioma", "Español"),
-                    "is_update": True, "likes": art.get("likes", []),
-                    "respaldos": len(self.respaldos_red[aid])
-                }
-                self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
-                
-                # Actualizar la vista si el autor está leyendo el artículo en ese momento
-                self.event_queue.put(("actualizar_respaldos", aid))
+                self.respaldos_red[aid] = {}
+            
+            # Guardamos el peer y la hora (timestamp)
+            self.respaldos_red[aid][peer_id] = time.time()
+            self._guardar_datos()
+            
+            art = self.mis_articulos[aid]
+            anuncio = {
+                "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
+                "tematica": art["tematica"], "autor": art["autor"],
+                "autor_nombre": art.get("autor_nombre", self.nombre_usuario), 
+                "autor_descripcion": art.get("autor_descripcion", self.mi_descripcion),
+                "idioma": art.get("idioma", "Español"),
+                "is_update": True, "likes": art.get("likes", []),
+                "respaldos": len(self.respaldos_red[aid])
+            }
+            self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
+            self.event_queue.put(("actualizar_respaldos", aid))
 
     def _al_recibir_remove_ping(self, peer_id, value):
         aid = value.get("id")
@@ -2524,24 +2548,14 @@ class BlogP2PApp:
         self._guardar_datos()
 
     def _aplicar_filtro(self):
-        for item in self.lista_articulos.get_children():
-            self.lista_articulos.delete(item)
-            
+        # Limpiar tarjetas anteriores
+        for widget in self.frame_tarjetas.winfo_children():
+            widget.destroy()
+        self.imagenes_tarjetas.clear()
+
         filtro_categoria = self.combo_filtro_categoria.get()
         filtro_etiqueta = self.entrada_filtro.get().strip().lower()
         filtro_idioma = self.combo_filtro_idioma.get()
-
-        # LIMPIEZA PROFUNDA: Eliminar cualquier artículo duplicado de la base de datos local
-        vistos = set()
-        limpios = []
-        for art in self.articulos_descubiertos:
-            aid = art.get("id")
-            if aid and aid not in vistos:
-                vistos.add(aid)
-                limpios.append(art)
-        if len(limpios) != len(self.articulos_descubiertos):
-            self.articulos_descubiertos = limpios
-            self._guardar_datos()
 
         articulos_filtrados = []
         for articulo in self.articulos_descubiertos:
@@ -2557,43 +2571,102 @@ class BlogP2PApp:
 
         total_articulos = len(articulos_filtrados)
         total_paginas = max(1, math.ceil(total_articulos / self.articulos_por_pagina))
-        
         if self.pagina_actual > total_paginas:
             self.pagina_actual = total_paginas
         if self.pagina_actual < 1:
             self.pagina_actual = 1
 
-        self.lbl_paginacion.config(text=f"Página {self.pagina_actual} de {total_paginas} ({total_articulos} artículos)")
-
+        # Primero calculamos el inicio y el fin de la página
         inicio = (self.pagina_actual - 1) * self.articulos_por_pagina
         fin = inicio + self.articulos_por_pagina
+
+        # Ahora sí, actualizamos el texto usando las variables ya definidas
+        mostrando = len(articulos_filtrados[inicio:fin])
+        self.lbl_paginacion.config(text=f"Página {self.pagina_actual} de {total_paginas}, mostrando {mostrando} de {total_articulos} artículos en la red")
         
         for articulo in articulos_filtrados[inicio:fin]:
+            self._crear_tarjeta_articulo(articulo)
+
+    def _crear_tarjeta_articulo(self, art):
+        card = tk.Frame(self.frame_tarjetas, bg="white", bd=1, relief="solid", padx=15, pady=15)
+        card.pack(fill="x", pady=10, padx=10)
+        card.columnconfigure(0, weight=1)
+
+        autor = art.get("autor_nombre", "Desconocido")
+        fecha_str = art.get("id", "").split("-")[-1]
+        try:
+            fecha = time.strftime('%d de %b', time.localtime(int(fecha_str)))
+        except:
+            fecha = "Hace poco"
+            
+        lbl_autor = tk.Label(card, text=f"👤 {autor}  ·  {fecha}", font=("Helvetica", 10), bg="white", fg="#666")
+        lbl_autor.grid(row=0, column=0, sticky="w")
+
+        lbl_titulo = tk.Label(card, text=art.get("titulo", "Sin título"), font=("Helvetica", 16, "bold"), bg="white", fg="#000", wraplength=500, justify="left")
+        lbl_titulo.grid(row=1, column=0, sticky="w", pady=(5, 5))
+
+        etiquetas = ", ".join(art.get("etiquetas", []))
+        lbl_resumen = tk.Label(card, text=f"{etiquetas}", font=("Helvetica", 11), bg="white", fg="#777")
+        lbl_resumen.grid(row=2, column=0, sticky="w")
+
+        likes = len(art.get("likes", []))
+        respaldos = art.get("respaldos", 0)
+        frame_metricas = tk.Frame(card, bg="white")
+        frame_metricas.grid(row=3, column=0, sticky="w", pady=(10, 0))
+        lbl_metricas = tk.Label(frame_metricas, text=f"⭐ {likes}   ⚡ {respaldos} respaldos", font=("Helvetica", 10), bg="white", fg="#444")
+        lbl_metricas.pack()
+
+        # --- NUEVO: Búsqueda de imagen de vista previa ---
+        imagen_b64 = None
+        # Buscamos si tenemos el contenido completo en memoria (porque lo escribimos o descargamos)
+        full_art = self.mis_articulos.get(art["id"]) or self.articulos_guardados.get(art["id"])
+        if full_art and isinstance(full_art.get("contenido"), dict):
+            imgs = full_art["contenido"].get("imagenes", {})
+            if imgs:
+                imagen_b64 = list(imgs.values())[0]
+
+        if imagen_b64:
             try:
-                # Forzamos a que todo sea string para que Tkinter no falle si hay un None
-                autor_mostrar = articulo.get("autor_nombre")
-                if not autor_mostrar:
-                    autor_raw = articulo.get("autor", "Desconocido")
-                    autor_mostrar = str(autor_raw)[:12] + "..."
-                
-                val_titulo = str(articulo.get("titulo", "Sin título"))
-                val_etiquetas = ", ".join([str(e) for e in articulo.get("etiquetas", [])])
-                val_tematica = str(articulo.get("tematica", ""))
-                val_autor = str(autor_mostrar)
-                
-                self.lista_articulos.insert("", "end", iid=str(articulo["id"]), values=(
-                    val_titulo, val_etiquetas, val_tematica, val_autor
-                ))
-            except Exception as e:
-                print(f"Error dibujando artículo {articulo.get('id')}: {e}")
+                img_data = base64.b64decode(imagen_b64)
+                img = Image.open(io.BytesIO(img_data))
+                img.thumbnail((150, 150))
+                photo = ImageTk.PhotoImage(img)
+                self.imagenes_tarjetas.append(photo)
+                lbl_img = tk.Label(card, image=photo, bg="white")
+                lbl_img.grid(row=0, column=1, rowspan=4, padx=(20, 0), sticky="e")
+            except: pass
+
+        # --- NUEVO: Efecto Hover Orgánico ---
+        def on_enter(e):
+            card.configure(bg="#f0f0f0")
+            lbl_autor.configure(bg="#f0f0f0")
+            lbl_titulo.configure(bg="#f0f0f0")
+            lbl_resumen.configure(bg="#f0f0f0")
+            frame_metricas.configure(bg="#f0f0f0")
+            lbl_metricas.configure(bg="#f0f0f0")
+
+        def on_leave(e):
+            card.configure(bg="white")
+            lbl_autor.configure(bg="white")
+            lbl_titulo.configure(bg="white")
+            lbl_resumen.configure(bg="white")
+            frame_metricas.configure(bg="white")
+            lbl_metricas.configure(bg="white")
+
+        for widget in [card, lbl_autor, lbl_titulo, lbl_resumen, frame_metricas, lbl_metricas]:
+            widget.bind("<Button-1>", lambda e, a=art: self._abrir_por_id(a["id"]))
+            widget.bind("<Enter>", on_enter)
+            widget.bind("<Leave>", on_leave)
 
     def _reiniciar_paginacion(self):
         self.pagina_actual = 1
+        self.canvas_descubrir.yview_moveto(0) # <-- Sube al inicio
         self._aplicar_filtro()
 
     def _pagina_anterior(self):
         if self.pagina_actual > 1:
             self.pagina_actual -= 1
+            self.canvas_descubrir.yview_moveto(0) # <-- Sube al inicio
             self._aplicar_filtro()
 
     def _pagina_siguiente(self):
@@ -2612,6 +2685,7 @@ class BlogP2PApp:
         
         if self.pagina_actual < total_paginas:
             self.pagina_actual += 1
+            self.canvas_descubrir.yview_moveto(0) # <-- Sube al inicio
             self._aplicar_filtro()
 
     # --- ABRIR Y MOSTRAR ---
@@ -2714,7 +2788,7 @@ class BlogP2PApp:
         if anuncio:
             self.etiqueta_titulo_lectura.config(text=anuncio["titulo"])
             self.lbl_count.config(text=f"({len(anuncio.get('likes', []))})")
-            self.lbl_heart.config(fg="red")
+            self.lbl_heart.config(fg="#D4AF37")
             self.btn_quitar_etiqueta.pack_forget()
             
             # --- NUEVA LÓGICA P2P ---
@@ -2905,22 +2979,30 @@ class BlogP2PApp:
                 self.etiqueta_titulo_lectura.config(text="Artículo sin título")
 
         # 3. Calcular y mostrar los respaldos
+        # 3. Calcular y mostrar los respaldos (SOLO ACTIVOS EN LAS ÚLTIMAS 24 HORAS)
         num_respaldos = 0
+        ahora = time.time()
+        hace_24h = ahora - 86400
+        
         if aid in self.mis_articulos:
-            num_respaldos = len(self.respaldos_red.get(aid, []))
+            lista = self.respaldos_red.get(aid, {})
+            if isinstance(lista, dict):
+                num_respaldos = sum(1 for t in lista.values() if t > hace_24h)
+            else:
+                num_respaldos = len(lista) # Compatibilidad con datos viejos
         else:
             art_meta = self.articulos_guardados.get(aid)
             if not art_meta:
                 art_meta = next((a for a in self.articulos_descubiertos if a["id"] == aid), None)
             if art_meta:
                 num_respaldos = art_meta.get("respaldos", 0)
-        
+
         if hasattr(self, 'lbl_metricas_respaldo'):
             if num_respaldos > 0:
-                self.lbl_metricas_respaldo.config(text=f"🟢 Respaldado por {num_respaldos} nodo(s) en la red")
+                self.lbl_metricas_respaldo.config(text=f"🟢 Respaldado por {num_respaldos} nodo(s) activos las últimas 24 horas")
             else:
-                self.lbl_metricas_respaldo.config(text="⚪ Aún no tiene respaldos en la red")
-            self.lbl_metricas_respaldo.pack(pady=(5, 0)) # <-- ¡Aseguramos que se muestre!
+                self.lbl_metricas_respaldo.config(text="⚪ Aún no tiene respaldos activos en las últimas 24 horas")
+            self.lbl_metricas_respaldo.pack(pady=(5, 0))
 
         # 4. Cargar el texto y los likes
         self._cambiar_texto_lectura(contenido, autor_id, autor_nombre)
@@ -2946,9 +3028,11 @@ class BlogP2PApp:
             if aid in self.mis_articulos:
                 self.btn_editar.pack(side="left", padx=3)
                 self.btn_borrar.pack(side="left", padx=3)
+                self.lbl_heart.config(fg="grey")
             else:
                 self.btn_seguir.pack(side="left", padx=3)
                 self.btn_seguir_resp.pack(side="left", padx=3)
+                self.lbl_heart.config(fg="#D4AF37")
                 
                 art_meta = self.articulos_guardados.get(aid)
                 if not art_meta:
@@ -3408,6 +3492,15 @@ class BlogP2PApp:
             utc_autor = perfil.get("utc_offset", 0.0)
 
         self.lbl_nombre_autor.config(text=nombre)
+        ultima_vez = self.perfiles_autores.get(autor_id, {}).get("ultima_conexion", 0)
+        if autor_id == self.node.local_id:
+            self.lbl_estado_conexion.config(text="Tú (en línea ahora)", foreground="green")
+        elif ultima_vez > 0:
+            import datetime
+            dt_local = datetime.datetime.fromtimestamp(ultima_vez)
+            self.lbl_estado_conexion.config(text=f"Activo por última vez: {dt_local.strftime('%d/%m/%Y a las %H:%M')}", foreground="black")
+        else:
+            self.lbl_estado_conexion.config(text="Estado de conexión desconocido", foreground="gray")
         
         self.texto_desc_autor.config(state="normal")
         self.texto_desc_autor.delete("1.0", "end")
