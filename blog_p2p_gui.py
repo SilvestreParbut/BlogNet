@@ -968,16 +968,134 @@ class BlogP2PApp:
                     text_widget.tag_remove(tag, start, end)
                 else:
                     text_widget.tag_add(tag, start, end)
+                    text_widget.tag_raise(tag)
             except tk.TclError:
                 if tag in text_widget.tag_names("insert"):
                     text_widget.tag_remove(tag, "insert")
                 else:
                     text_widget.tag_add(tag, "insert")
+                    text_widget.tag_raise(tag)
 
+        def apply_font(family, size):
+            # Quitar cualquier tag de fuente anterior para que no se acumulen
+            for t in text_widget.tag_names():
+                if t.startswith("font_") or t in ["h1_tag", "h2_tag"]:
+                    try:
+                        start = text_widget.index("sel.first")
+                        end = text_widget.index("sel.last")
+                        text_widget.tag_remove(t, start, end)
+                    except tk.TclError:
+                        text_widget.tag_remove(t, "insert")
+            
+            tag_name = f"font_{family}_{size}"
+            text_widget.tag_configure(tag_name, font=(family, int(size)))
+            try:
+                start = text_widget.index("sel.first")
+                end = text_widget.index("sel.last")
+            except tk.TclError:
+                start = "insert"
+                end = "insert"
+            text_widget.tag_add(tag_name, start, end)
+
+        def apply_align(align):
+            tag_name = f"align_{align}"
+            text_widget.tag_configure(tag_name, justify=align)
+            try:
+                start = text_widget.index("sel.first")
+                end = text_widget.index("sel.last")
+            except tk.TclError:
+                linea = text_widget.index("insert").split(".")[0]
+                start = f"{linea}.0"
+                end = f"{linea}.end"
+            
+            primera_linea = start.split(".")[0]
+            ultima_linea = end.split(".")[0]
+            start_completo = f"{primera_linea}.0"
+            end_completo = f"{ultima_linea}.end"
+            
+            text_widget.tag_add(tag_name, start_completo, end_completo)
+            text_widget.tag_raise(tag_name)
+
+        def apply_h1():
+            apply_font("Helvetica", 28)
+            text_widget.tag_configure("h1_tag", font=("Helvetica", 28, "bold"))
+            try:
+                start = text_widget.index("sel.first")
+                end = text_widget.index("sel.last")
+            except tk.TclError:
+                start = "insert"
+                end = "insert"
+            text_widget.tag_remove("bold", start, end) # Evitar conflicto
+            text_widget.tag_add("h1_tag", start, end)
+
+        def apply_h2():
+            apply_font("Helvetica", 20)
+            text_widget.tag_configure("h2_tag", font=("Helvetica", 20, "bold"))
+            try:
+                start = text_widget.index("sel.first")
+                end = text_widget.index("sel.last")
+            except tk.TclError:
+                start = "insert"
+                end = "insert"
+            text_widget.tag_remove("bold", start, end)
+            text_widget.tag_add("h2_tag", start, end)
+
+        def clear_format():
+            # Quita TODOS los tags de la selección, volviendo al texto normal
+            try:
+                start = text_widget.index("sel.first")
+                end = text_widget.index("sel.last")
+            except tk.TclError:
+                start = "insert"
+                end = "insert"
+                
+            for tag in text_widget.tag_names():
+                if tag != "sel":
+                    text_widget.tag_remove(tag, start, end)
+
+        # 1. Deshacer / Rehacer
+        ttk.Button(barra, text="↶", width=3, command=lambda: text_widget.edit_undo()).pack(side="left", padx=2)
+        ttk.Button(barra, text="↷", width=3, command=lambda: text_widget.edit_redo()).pack(side="left", padx=2)
+        
+        ttk.Separator(barra, orient="vertical").pack(side="left", fill="y", padx=5)
+
+        # 2. Negrita, Cursiva, Subrayado, Normal
         ttk.Button(barra, text="N", width=3, command=lambda: toggle_tag("bold")).pack(side="left", padx=2)
         ttk.Button(barra, text="K", width=3, command=lambda: toggle_tag("italic")).pack(side="left", padx=2)
         ttk.Button(barra, text="S", width=3, command=lambda: toggle_tag("underline")).pack(side="left", padx=2)
-        ttk.Button(barra, text="Insertar Imagen", command=self._insertar_imagen).pack(side="left", padx=(10, 2))
+        ttk.Button(barra, text="Normal", command=clear_format).pack(side="left", padx=2)
+
+        ttk.Separator(barra, orient="vertical").pack(side="left", fill="y", padx=5)
+
+        # 3. Fuente y Tamaño
+        fuentes = ["Helvetica", "Times", "Courier", "Arial", "Verdana"]
+        combo_fuente = ttk.Combobox(barra, values=fuentes, width=10, state="readonly")
+        combo_fuente.set("Helvetica")
+        combo_fuente.pack(side="left", padx=2)
+
+        tamanos = ["10", "12", "14", "16", "18", "24", "32"]
+        combo_tamano = ttk.Combobox(barra, values=tamanos, width=4, state="readonly")
+        combo_tamano.set("13")
+        combo_tamano.pack(side="left", padx=2)
+
+        ttk.Button(barra, text="Aplicar", command=lambda: apply_font(combo_fuente.get(), combo_tamano.get())).pack(side="left", padx=2)
+
+        ttk.Separator(barra, orient="vertical").pack(side="left", fill="y", padx=5)
+
+        # 4. Títulos (H1, H2)
+        ttk.Button(barra, text="H1", width=3, command=apply_h1).pack(side="left", padx=2)
+        ttk.Button(barra, text="H2", width=3, command=apply_h2).pack(side="left", padx=2)
+
+        ttk.Separator(barra, orient="vertical").pack(side="left", fill="y", padx=5)
+
+        # 5. Alineación
+        ttk.Button(barra, text="Izq", width=3, command=lambda: apply_align("left")).pack(side="left", padx=2)
+        ttk.Button(barra, text="Cen", width=3, command=lambda: apply_align("center")).pack(side="left", padx=2)
+
+        ttk.Separator(barra, orient="vertical").pack(side="left", fill="y", padx=5)
+
+        # 6. Imagen
+        ttk.Button(barra, text="Imagen", command=self._insertar_imagen).pack(side="left", padx=2)
         
         return barra
 
@@ -1041,7 +1159,7 @@ class BlogP2PApp:
         # LA MAGIA: Caja ancha, texto con márgenes
         self.texto_contenido = tk.Text(frame_contenido, width=1, height=20, wrap="word", 
                                        bg="white", fg="black", font=("Helvetica", 13), insertbackground="black", relief="solid", bd=1,
-                                       padx=self.margen_texto, pady=15)
+                                       padx=self.margen_texto, pady=15, undo=True) # <-- AÑADIR undo=True
         self.texto_contenido.pack(side="bottom", fill="both", expand=True)
         self._configurar_portapapeles(self.texto_contenido)
 
@@ -1743,10 +1861,25 @@ class BlogP2PApp:
             articulo_id = f"{self.node.local_id[:8]}-{int(time.time())}"
 
         contenido_rico = {"texto": contenido_texto, "tags": {}, "imagenes": dict(self.imagenes_temporales)}
-        for tag in ["bold", "italic", "underline"]:
+        # Guardar todos los tags aplicados
+        todos_los_tags = self.texto_contenido.tag_names()
+        for tag in todos_los_tags:
+            if tag == "sel": continue
             rangos = self.texto_contenido.tag_ranges(tag)
             if rangos:
                 contenido_rico["tags"][tag] = [str(r) for r in rangos]
+                
+                config = {}
+                try:
+                    fuente = self.texto_contenido.tag_cget(tag, "font")
+                    if fuente: config["font"] = fuente
+                    alineacion = self.texto_contenido.tag_cget(tag, "justify")
+                    if alineacion: config["justify"] = alineacion
+                except:
+                    pass
+                
+                if config:
+                    contenido_rico.setdefault("tag_configs", {})[tag] = config
 
         self.mis_articulos[articulo_id] = {
             "id": articulo_id, "titulo": titulo, "etiquetas": lista_etiquetas,
@@ -2676,9 +2809,32 @@ class BlogP2PApp:
             imagenes = valor.get("imagenes", {})
             self.texto_lectura.insert("1.0", texto)
             
+            # Restaurar la configuración de los tags (fuentes, tamaños, alineación)
+            for tag, config in valor.get("tag_configs", {}).items():
+                kwargs = {}
+                if "font" in config:
+                    kwargs["font"] = config["font"]
+                if "justify" in config:
+                    kwargs["justify"] = config["justify"]
+                    
+                if kwargs:
+                    try:
+                        self.texto_lectura.tag_configure(tag, **kwargs)
+                    except Exception as e:
+                        print(f"Error al configurar tag {tag}: {e}")
+
+            # Aplicar los tags al texto
             for tag, rangos in valor.get("tags", {}).items():
                 for i in range(0, len(rangos), 2):
-                    self.texto_lectura.tag_add(tag, rangos[i], rangos[i+1])
+                    try:
+                        self.texto_lectura.tag_add(tag, rangos[i], rangos[i+1])
+                    except:
+                        pass
+            
+            # ¡LA MAGIA! Forzar prioridad de negrita, cursiva y subrayado en el lector
+            for special_tag in ["bold", "italic", "underline"]:
+                if special_tag in self.texto_lectura.tag_names():
+                    self.texto_lectura.tag_raise(special_tag)
             
             for img_id, b64 in imagenes.items():
                 marcador = f"[{img_id}]"
