@@ -1190,7 +1190,10 @@ class BlogP2PApp:
         self.entrada_nombre = ttk.Entry(frame_nombre)
         self.entrada_nombre.pack(side="left", fill="x", expand=True, padx=5)
         self._configurar_portapapeles(self.entrada_nombre)
-        
+        ttk.Label(frame_perfil, text=self._t("Descripción:")).pack(anchor="w")
+        self.texto_desc_perfil = tk.Text(frame_perfil, height=3, wrap="word", bg="white", fg="black", font=("Helvetica", 10))
+        self.texto_desc_perfil.pack(fill="x", pady=(0, 5))
+        self._configurar_portapapeles(self.texto_desc_perfil)
         ttk.Label(frame_perfil, text="Horario de conexión (ej. 18:00 a 22:00):").pack(anchor="w")
         self.entrada_horario = ttk.Entry(frame_perfil)
         self.entrada_horario.pack(fill="x", pady=(0, 5))
