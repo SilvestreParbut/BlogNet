@@ -1527,7 +1527,7 @@ class BlogP2PApp:
         for aid in lapidas_remotas:
             self.event_queue.put(("lapida_recibida", aid))
 
-        # 2. ¡NUEVO! Procesar los respaldos que el otro equipo tiene de nosotros
+        # 2. Procesar los respaldos
         respaldos_remotos = value.get("backups", []) if isinstance(value, dict) else []
         self.event_queue.put(("procesar_respaldos_remotos", (peer_id, respaldos_remotos)))
 
@@ -1536,15 +1536,13 @@ class BlogP2PApp:
         articulos.sort(key=lambda x: x["id"], reverse=True)
         catalogo = []
         for art in articulos:
-        catalogo = []
-        for art in articulos:
             catalogo.append({
                 "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
                 "tematica": art["tematica"], "autor": art["autor"],
                 "autor_nombre": art.get("autor_nombre", "Usuario Anónimo"),
                 "autor_descripcion": art.get("autor_descripcion", ""),
-                "autor_horario": art.get("autor_horario", ""),           # <--- AÑADIR ESTO
-                "autor_utc_offset": art.get("autor_utc_offset", 0.0),    # <--- AÑADIR ESTO
+                "autor_horario": art.get("autor_horario", ""),
+                "autor_utc_offset": art.get("autor_utc_offset", 0.0),
                 "idioma": art.get("idioma", "Español"),
                 "likes": art.get("likes", []),
                 "respaldos": len(self.respaldos_red.get(art["id"], []))
@@ -1553,32 +1551,30 @@ class BlogP2PApp:
         respuesta = {
             "catalogo": catalogo, 
             "lapidas": list(self.lapidas),
-            "backups": list(self.articulos_guardados.keys()) # <-- Enviamos lo que tenemos guardado
+            "backups": list(self.articulos_guardados.keys())
         }
         self._enviar_json_seguro(peer_id, "sync_response", respuesta)
 
-        # 4. Si no es una respuesta, pedimos el catálogo
+        # 4. Pedir catálogo si no es respuesta
         es_respuesta = value.get("is_reply", False) if isinstance(value, dict) else False
         if not es_respuesta:
             self._enviar_json_seguro(peer_id, "sync_request", {
                 "lapidas": list(self.lapidas), 
                 "is_reply": True, 
-                "backups": list(self.articulos_guardados.keys()) # <-- Pedimos lo que tienen guardado
+                "backups": list(self.articulos_guardados.keys())
             })
 
     def _al_recibir_sync_response(self, peer_id, value):
         if isinstance(value, dict):
             catalogo = value.get("catalogo", [])
             lapidas_remotas = value.get("lapidas", [])
-            
-            # ¡NUEVO! Procesar los respaldos
             respaldos_remotos = value.get("backups", [])
             self.event_queue.put(("procesar_respaldos_remotos", (peer_id, respaldos_remotos)))
 
             for aid in lapidas_remotas:
                 self.event_queue.put(("lapida_recibida", aid))
             
-            # Limpieza de fantasmas (intacta)
+            # Limpieza de fantasmas
             ids_en_catalogo = [a["id"] for a in catalogo]
             for art in list(self.articulos_descubiertos):
                 if art.get("autor") == peer_id and art["id"] not in ids_en_catalogo and art["id"] != self.articulo_actual_id:
@@ -1603,7 +1599,12 @@ class BlogP2PApp:
             for anuncio in value:
                 if anuncio["id"] not in self.lapidas:
                     if "autor_descripcion" in anuncio and "autor" in anuncio:
-                        self.perfiles_autores[anuncio["autor"]] = {"nombre": anuncio.get("autor_nombre", ""), "descripcion": anuncio["autor_descripcion"]}
+                        self.perfiles_autores[anuncio["autor"]] = {
+                            "nombre": anuncio.get("autor_nombre", ""), 
+                            "descripcion": anuncio["autor_descripcion"],
+                            "horario": anuncio.get("autor_horario", ""),
+                            "utc_offset": anuncio.get("autor_utc_offset", 0.0)
+                        }
                     self.event_queue.put(("nuevo_articulo", anuncio))
         
         self.event_queue.put(("refrescar_ui", None))
@@ -1652,11 +1653,9 @@ class BlogP2PApp:
         nueva_desc = self.texto_desc_perfil.get("1.0", "end-1c").strip()
         nuevo_horario = self.entrada_horario.get().strip()
         
-        # Calcular el desfase UTC en horas (Ej: Chile es UTC-3)
         import time
         self.mi_utc_offset = -time.timezone / 3600.0
         self.mi_horario = nuevo_horario
-        
         if nuevo:
             self.nombre_usuario = nuevo
             self.mi_descripcion = nueva_desc
@@ -1670,8 +1669,8 @@ class BlogP2PApp:
             for art in self.mis_articulos.values():
                 art["autor_nombre"] = self.nombre_usuario
                 art["autor_descripcion"] = self.mi_descripcion
-                art["autor_horario"] = self.mi_horario           # <--- AÑADIR ESTO
-                art["autor_utc_offset"] = self.mi_utc_offset     # <--- AÑADIR ESTO
+                art["autor_horario"] = self.mi_horario
+                art["autor_utc_offset"] = self.mi_utc_offset
                 
             self._guardar_datos()
             
@@ -1689,6 +1688,8 @@ class BlogP2PApp:
                     "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
                     "tematica": art["tematica"], "autor": art["autor"],
                     "autor_nombre": art["autor_nombre"], "autor_descripcion": art["autor_descripcion"],
+                    "autor_horario": art.get("autor_horario", ""),
+                    "autor_utc_offset": art.get("autor_utc_offset", 0.0),
                     "idioma": art.get("idioma", "Español"),
                     "is_update": True, "likes": art.get("likes", [])
                 }
@@ -2200,7 +2201,6 @@ class BlogP2PApp:
         if art is None:
             return
 
-        # Aseguramos que el nombre del autor viaje siempre correctamente
         autor_nombre = art.get("autor_nombre") or self.nombre_usuario
         autor_desc = art.get("autor_descripcion") or self.mi_descripcion
 
@@ -2209,8 +2209,8 @@ class BlogP2PApp:
             "likes": art.get("likes", []), "etiquetas": art.get("etiquetas", []),
             "tematica": art.get("tematica", ""), "autor": art.get("autor", self.node.local_id),
             "autor_nombre": autor_nombre, "autor_descripcion": autor_desc,
-            "autor_horario": art.get("autor_horario", ""),           # <--- AÑADIR ESTO
-            "autor_utc_offset": art.get("autor_utc_offset", 0.0),    # <--- AÑADIR ESTO
+            "autor_horario": art.get("autor_horario", ""),
+            "autor_utc_offset": art.get("autor_utc_offset", 0.0),
             "idioma": art.get("idioma", "Español"),
             "respaldos": len(self.respaldos_red.get(articulo_id, []))
         })
