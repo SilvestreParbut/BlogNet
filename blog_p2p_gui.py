@@ -2262,8 +2262,21 @@ class BlogP2PApp:
                 self._procesar_lapida(anuncio["id"])
                 return
 
-            if "autor_descripcion" in anuncio and "autor" in anuncio:
-                self.perfiles_autores[anuncio["autor"]] = {"nombre": anuncio.get("autor_nombre", ""), "descripcion": anuncio["autor_descripcion"]}
+            # ¡LA MAGIA ESTÁ AQUÍ! Actualizamos sin borrar el horario si no viene
+            if "autor" in anuncio:
+                autor_id = anuncio["autor"]
+                if autor_id not in self.perfiles_autores:
+                    self.perfiles_autores[autor_id] = {}
+                
+                if "autor_nombre" in anuncio:
+                    self.perfiles_autores[autor_id]["nombre"] = anuncio["autor_nombre"]
+                if "autor_descripcion" in anuncio:
+                    self.perfiles_autores[autor_id]["descripcion"] = anuncio["autor_descripcion"]
+                if "autor_horario" in anuncio:
+                    self.perfiles_autores[autor_id]["horario"] = anuncio["autor_horario"]
+                if "autor_utc_offset" in anuncio:
+                    self.perfiles_autores[autor_id]["utc_offset"] = anuncio["autor_utc_offset"]
+                
                 self._guardar_datos()
 
             # Ignorar si es un artículo con lápida
@@ -3226,9 +3239,15 @@ class BlogP2PApp:
         if not desc:
             desc = "Este autor aún no ha escrito una descripción."
         
+        # Cargar datos locales si es mi propio perfil
         if autor_id == self.node.local_id:
             nombre = self.nombre_usuario
             desc = self.mi_descripcion if self.mi_descripcion else "Aún no has escrito una descripción."
+            horario_autor = self.mi_horario
+            utc_autor = self.mi_utc_offset
+        else:
+            horario_autor = perfil.get("horario", "")
+            utc_autor = perfil.get("utc_offset", 0.0)
 
         self.lbl_nombre_autor.config(text=nombre)
         
@@ -3236,13 +3255,12 @@ class BlogP2PApp:
         self.texto_desc_autor.delete("1.0", "end")
         self.texto_desc_autor.insert("1.0", desc)
         self.texto_desc_autor.config(state="disabled")
-        horario_autor = perfil.get("horario", "")
-        utc_autor = perfil.get("utc_offset", 0.0)
         
+        # MOSTRAR U OCULTAR EL HORARIO
         if horario_autor:
             texto_traducido = self._traducir_horario(horario_autor, utc_autor)
             self.lbl_horario_autor.config(text=f"🕒 Horario de conexión: {texto_traducido}")
-            self.lbl_horario_autor.pack(pady=(0, 10))
+            self.lbl_horario_autor.pack(anchor="w", pady=(0, 10))
         else:
             self.lbl_horario_autor.pack_forget()
         
@@ -3269,7 +3287,6 @@ class BlogP2PApp:
         if autor_id == self.node.local_id:
             cols_autor = [c for c in self.mis_colecciones.values() if c.get("autor") == self.node.local_id]
         else:
-            # Buscar en colecciones descubiertas y en las que tengo importadas
             cols_autor = [c for c in self.colecciones_descubiertas.values() if c.get("autor") == autor_id]
             cols_autor.extend([c for c in self.mis_colecciones.values() if c.get("autor") == autor_id])
             
