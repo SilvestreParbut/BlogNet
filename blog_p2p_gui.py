@@ -266,6 +266,8 @@ class BlogP2PApp:
         self.autores_seguidos = set()        
         self.autores_respaldados = set()     
         self.mi_descripcion = ""
+        self.mi_horario = ""
+        self.mi_utc_offset = 0.0
         self.perfiles_autores = {}     
 
         self.articulo_actual_id = None
@@ -365,7 +367,7 @@ class BlogP2PApp:
             self.mi_descripcion = self._leer_kv("mi_descripcion", "")
             self.perfiles_autores = self._leer_kv("perfiles_autores", {})
             self.limite_mb = self._leer_kv("limite_mb", 100)
-            self.ancho_columnas = self._leer_kv("ancho_columnas", 80) # Guardar preferencia
+            self.ancho_columnas = self._leer_kv("ancho_columnas", 80)
             self.borradores = self._leer_kv("borradores", {})
             self.notificaciones_etiquetas = self._leer_kv("notificaciones_etiquetas", [])
             self.etiquetas_revocadas = self._leer_kv("etiquetas_revocadas", {})
@@ -374,9 +376,14 @@ class BlogP2PApp:
             self.lapidas = set(self._leer_kv("lapidas", []))
             respaldos_raw = self._leer_kv("respaldos_red", {})
             self.respaldos_red = {k: list(v) for k, v in respaldos_raw.items()}
+            
+            # --- NUEVO: Cargar datos del horario ---
+            self.mi_horario = self._leer_kv("mi_horario", "")
+            self.mi_utc_offset = self._leer_kv("mi_utc_offset", 0.0)
+            # ---------------------------------------
+            
         except Exception as e:
             print(f"Error al cargar datos de SQLite: {e}")
-
     def _guardar_datos(self):
         # Si ya había un temporizador, lo cancelamos
         if hasattr(self, '_save_timer') and self._save_timer:
@@ -405,6 +412,12 @@ class BlogP2PApp:
             self._guardar_kv("colecciones_descubiertas", self.colecciones_descubiertas)
             self._guardar_kv("lapidas", list(self.lapidas))
             self._guardar_kv("respaldos_red", {k: list(v) for k, v in self.respaldos_red.items()})
+            
+            # --- NUEVO: Guardar datos del horario ---
+            self._guardar_kv("mi_horario", self.mi_horario)
+            self._guardar_kv("mi_utc_offset", self.mi_utc_offset)
+            # ----------------------------------------
+            
         except Exception as e:
             print(f"Error al guardar en SQLite: {e}")
 
@@ -1178,12 +1191,13 @@ class BlogP2PApp:
         self.entrada_nombre.pack(side="left", fill="x", expand=True, padx=5)
         self._configurar_portapapeles(self.entrada_nombre)
         
-        ttk.Label(frame_perfil, text=self._t("Descripción:")).pack(anchor="w")
-        self.texto_desc_perfil = tk.Text(frame_perfil, height=3, wrap="word", bg="white", fg="black", font=("Helvetica", 10))
-        self.texto_desc_perfil.pack(fill="x", pady=(0, 5))
-        self._configurar_portapapeles(self.texto_desc_perfil)
+        ttk.Label(frame_perfil, text="Horario de conexión (ej. 18:00 a 22:00):").pack(anchor="w")
+        self.entrada_horario = ttk.Entry(frame_perfil)
+        self.entrada_horario.pack(fill="x", pady=(0, 5))
+        self._configurar_portapapeles(self.entrada_horario)
         
-        ttk.Button(frame_perfil, text=self._t("Guardar Perfil"), command=self._actualizar_nombre).pack(anchor="e")
+        tip_gmt = ttk.Label(frame_perfil, text="Sugerencia: El sistema traducirá esta hora automáticamente a la hora local de quien visite tu perfil.", font=("TkDefaultFont", 9, "italic"), foreground="#555555")
+        tip_gmt.pack(anchor="w", pady=(0, 10))
 
         ttk.Label(frame_izq, text=self._t("Mis artículos publicados"), font=("TkDefaultFont", 12, "bold")).pack(anchor="w", pady=(10, 5))
         
@@ -1234,6 +1248,8 @@ class BlogP2PApp:
 
         self.texto_desc_autor = tk.Text(frame_principal, height=4, wrap="word", bg="white", fg="black", font=("Helvetica", 12), relief="solid", bd=1, state="disabled")
         self.texto_desc_autor.pack(fill="x", pady=(0, 15))
+        self.lbl_horario_autor = ttk.Label(frame_principal, text="", font=("TkDefaultFont", 10, "bold"), foreground="#005a9e")
+        # No lo empaquetamos aquí, se hará en _abrir_perfil_autor
 
         ttk.Label(frame_principal, text=self._t("Artículos publicados (más recientes primero):"), font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
         columnas = ("titulo", "categoria", "fecha")
@@ -1617,6 +1633,12 @@ class BlogP2PApp:
     def _actualizar_nombre(self):
         nuevo = self.entrada_nombre.get().strip()
         nueva_desc = self.texto_desc_perfil.get("1.0", "end-1c").strip()
+        nuevo_horario = self.entrada_horario.get().strip()
+        
+        # Calcular el desfase UTC en horas (Ej: Chile es UTC-3)
+        import time
+        self.mi_utc_offset = -time.timezone / 3600.0
+        self.mi_horario = nuevo_horario
         if nuevo:
             self.nombre_usuario = nuevo
             self.mi_descripcion = nueva_desc
@@ -1628,7 +1650,13 @@ class BlogP2PApp:
                 
             self._guardar_datos()
             
-            msg_perfil = {"autor": self.node.local_id, "nombre": self.nombre_usuario, "descripcion": self.mi_descripcion}
+            msg_perfil = {
+                "autor": self.node.local_id, 
+                "nombre": self.nombre_usuario, 
+                "descripcion": self.mi_descripcion,
+                "horario": self.mi_horario,
+                "utc_offset": self.mi_utc_offset
+            }
             self.node.publish("blog:system:profiles", json.dumps(msg_perfil).encode())
             
             for art in self.mis_articulos.values():
@@ -2189,7 +2217,12 @@ class BlogP2PApp:
         try:
             mensaje = json.loads(data.decode())
             if topic == "blog:system:profiles":
-                self.perfiles_autores[mensaje["autor"]] = {"nombre": mensaje["nombre"], "descripcion": mensaje["descripcion"]}
+                self.perfiles_autores[mensaje["autor"]] = {
+                    "nombre": mensaje["nombre"], 
+                    "descripcion": mensaje["descripcion"],
+                    "horario": mensaje.get("horario", ""),
+                    "utc_offset": mensaje.get("utc_offset", 0.0)
+                }
                 self._guardar_datos()
                 self.event_queue.put(("perfil_actualizado", mensaje["autor"]))
                 return
@@ -3173,6 +3206,15 @@ class BlogP2PApp:
         self.texto_desc_autor.delete("1.0", "end")
         self.texto_desc_autor.insert("1.0", desc)
         self.texto_desc_autor.config(state="disabled")
+        horario_autor = perfil.get("horario", "")
+        utc_autor = perfil.get("utc_offset", 0.0)
+        
+        if horario_autor:
+            texto_traducido = self._traducir_horario(horario_autor, utc_autor)
+            self.lbl_horario_autor.config(text=f"🕒 Horario de conexión: {texto_traducido}")
+            self.lbl_horario_autor.pack(pady=(0, 10))
+        else:
+            self.lbl_horario_autor.pack_forget()
         
         # --- ARTÍCULOS ---
         for item in self.lista_articulos_autor.get_children():
@@ -3221,6 +3263,38 @@ class BlogP2PApp:
             return ip
         except Exception:
             return "127.0.0.1"
+
+    def _traducir_horario(self, horario_str, utc_offset_autor):
+        if not horario_str: return ""
+        import re
+        from datetime import datetime, timedelta
+        import time
+        
+        # Calcular mi offset actual
+        mi_utc_offset = -time.timezone / 3600.0
+        diferencia = mi_utc_offset - utc_offset_autor
+        
+        if diferencia == 0:
+            return horario_str
+            
+        # Buscar todas las horas en formato HH:MM dentro del texto (ej: 18:00)
+        horas = re.findall(r'(\d{1,2}):(\d{2})', horario_str)
+        if not horas:
+            return horario_str
+            
+        nueva_hora_str = horario_str
+        for h, m in horas:
+            try:
+                dt = datetime.now().replace(hour=int(h), minute=int(m))
+                dt_nueva = dt + timedelta(hours=diferencia)
+                hora_orig = f"{h.zfill(2)}:{m}"
+                hora_nueva = dt_nueva.strftime("%H:%M")
+                nueva_hora_str = nueva_hora_str.replace(hora_orig, hora_nueva)
+            except:
+                pass
+                
+        return f"{horario_str} (equivale a {nueva_hora_str} en tu hora local)"
+
     def _esta_conectado(self, peer_id):
         """Devuelve True si el peer ya está en la lista de conectados."""
         try:
