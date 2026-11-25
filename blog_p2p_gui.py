@@ -1763,9 +1763,14 @@ class BlogP2PApp:
         ahora = time.time()
         
         for aid in self.mis_articulos:
+            # --- CONVERSIÓN A PRUEBA DE BALAS ---
             if aid not in self.respaldos_red:
                 self.respaldos_red[aid] = {}
-                
+            elif isinstance(self.respaldos_red[aid], list):
+                # Si es una lista vieja, la convertimos a diccionario con hora actual
+                self.respaldos_red[aid] = {peer: ahora for peer in self.respaldos_red[aid]}
+            # ------------------------------------
+
             if aid in ids_respaldados:
                 if peer_id not in self.respaldos_red[aid]:
                     self.respaldos_red[aid][peer_id] = ahora
@@ -2137,28 +2142,28 @@ class BlogP2PApp:
         except Exception as e:
             pass
 
-    def _al_recibir_save_ping(self, peer_id, value):
-        aid = value.get("id")
-        if aid and aid in self.mis_articulos:
-            if aid not in self.respaldos_red:
-                self.respaldos_red[aid] = {}
-            
-            # Guardamos el peer y la hora (timestamp)
-            self.respaldos_red[aid][peer_id] = time.time()
-            self._guardar_datos()
-            
-            art = self.mis_articulos[aid]
-            anuncio = {
-                "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
-                "tematica": art["tematica"], "autor": art["autor"],
-                "autor_nombre": art.get("autor_nombre", self.nombre_usuario), 
-                "autor_descripcion": art.get("autor_descripcion", self.mi_descripcion),
-                "idioma": art.get("idioma", "Español"),
-                "is_update": True, "likes": art.get("likes", []),
-                "respaldos": len(self.respaldos_red[aid])
-            }
-            self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
-            self.event_queue.put(("actualizar_respaldos", aid))
+        articulos_filtrados = []
+        for articulo in self.articulos_descubiertos:
+            if filtro_categoria != self._t("Todas") and articulo.get("tematica") != filtro_categoria:
+                continue
+            if filtro_etiqueta:
+                etiquetas_articulo = [str(e).lower() for e in articulo.get("etiquetas", [])]
+                if filtro_etiqueta not in etiquetas_articulo:
+                    continue
+            if filtro_idioma != self._t("Todos") and articulo.get("idioma", "Español") != filtro_idioma:
+                continue
+            articulos_filtrados.append(articulo)
+
+        # --- NUEVO: Ordenar del más nuevo al más antiguo ---
+        def obtener_timestamp(art):
+            try:
+                # El ID tiene el formato "hash-timestamp", así que extraemos el timestamp
+                return int(art["id"].split("-")[-1])
+            except:
+                return 0 # Si falla, se va al final
+        
+        articulos_filtrados.sort(key=obtener_timestamp, reverse=True)
+        # ---------------------------------------------------
 
     def _al_recibir_remove_ping(self, peer_id, value):
         aid = value.get("id")
