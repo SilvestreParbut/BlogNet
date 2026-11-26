@@ -298,6 +298,9 @@ class BlogP2PApp:
         self.borradores = {}
         # Variables de estado que estaban mal ubicadas
         self.lapidas = set()
+        self.notificaciones_etiquetas = []
+        self.etiquetas_revocadas = {}
+        self.borradores = {}
         self.alerta_espacio_mostrada = False
         self.mis_colecciones = {}
         self.colecciones_descubiertas = {}
@@ -399,15 +402,21 @@ class BlogP2PApp:
             print(f"Error en migración: {e}")
 
     def _guardar_kv(self, clave, valor):
-        self.cursor.execute("INSERT OR REPLACE INTO kv_store (clave, valor) VALUES (?, ?)", 
-                            (clave, json.dumps(valor, ensure_ascii=False)))
-        self.conn.commit()
+        try:
+            self.cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", 
+                                (clave, json.dumps(valor, ensure_ascii=False)))
+            self.conn.commit()
+        except Exception as e:
+            print(f"Error en _guardar_kv: {e}")
 
     def _leer_kv(self, clave, defecto):
-        self.cursor.execute("SELECT valor FROM kv_store WHERE clave = ?", (clave,))
-        fila = self.cursor.fetchone()
-        if fila:
-            return json.loads(fila[0])
+        try:
+            self.cursor.execute("SELECT valor FROM config WHERE clave = ?", (clave,))
+            fila = self.cursor.fetchone()
+            if fila:
+                return json.loads(fila[0])
+        except Exception:
+            pass
         return defecto
 
     def _cargar_datos(self):
@@ -446,18 +455,16 @@ class BlogP2PApp:
             for r in self.cursor.fetchall():
                 if r[2] == 1: self.mis_colecciones[r[0]] = json.loads(r[1])
                 else: self.colecciones_descubiertas[r[0]] = json.loads(r[1])
-
-            # Cargar o generar llaves criptográficas
+                
+            # 5. Cargar llaves criptográficas
             sk_guardada = self._leer_kv("llave_privada", "")
             if sk_guardada:
                 self.llave_privada = nacl.signing.SigningKey(sk_guardada.encode(), encoder=nacl.encoding.HexEncoder)
                 self.llave_publica = self.llave_privada.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()
             else:
-                # Si no existe, generamos una nueva
                 self.llave_privada = nacl.signing.SigningKey.generate()
                 self.llave_publica = self.llave_privada.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()
                 self._guardar_kv("llave_privada", self.llave_privada.encode(encoder=nacl.encoding.HexEncoder).decode())
-                print("🔑 Nuevas llaves criptográficas generadas para tu nodo.")
                 
         except Exception as e:
             print(f"Error al cargar datos de SQLite: {e}")
