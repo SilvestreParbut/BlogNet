@@ -860,6 +860,25 @@ class BlogP2PApp:
             if aid in arts_actuales:
                 lista.selection_set(i)
 
+    def _menu_contextual_mis_articulos(self, event):
+        # Identificar qué fila se ha clickeado con el botón derecho
+        item = self.lista_mis_articulos.identify_row(event.y)
+        if item:
+            # Seleccionar la fila visualmente para que el usuario sepa cuál está eligiendo
+            self.lista_mis_articulos.selection_set(item)
+            
+            # Establecer el ID como el artículo actual para que las funciones de editar y borrar actúen sobre él
+            self.articulo_actual_id = item
+            
+            # Crear el menú
+            menu = tk.Menu(self.root, tearoff=0)
+            menu.add_command(label="Editar", command=self._preparar_edicion)
+            menu.add_command(label="Borrar", command=self._borrar_mi_articulo)
+            
+            # Mostrar el menú en la posición del ratón
+            menu.tk_popup(event.x_root, event.y_root)
+
+
     def _abrir_mi_articulo_doble_clic(self, event):
         item = self.lista_mis_articulos.identify_row(event.y)
         if item:
@@ -1344,7 +1363,7 @@ class BlogP2PApp:
         self.entrada_horario.pack(fill="x", pady=(0, 5))
         self._configurar_portapapeles(self.entrada_horario)
         
-        tip_gmt = ttk.Label(frame_perfil, text="Sugerencia: El sistema traducirá esta hora automáticamente a la hora local de quien visite tu perfil.", font=("TkDefaultFont", 9, "italic"), foreground="#555555")
+        tip_gmt = ttk.Label(frame_perfil, text="El sistema traducirá esta hora automáticamente a la hora local de quien visite tu perfil.", font=("TkDefaultFont", 9, "italic"), foreground="#555555")
         tip_gmt.pack(anchor="w", pady=(0, 10))
 
         ttk.Button(frame_perfil, text=self._t("Guardar Perfil"), command=self._actualizar_nombre).pack(anchor="e")
@@ -1361,6 +1380,7 @@ class BlogP2PApp:
         self.lista_mis_articulos.column("fecha", width=150)
         self.lista_mis_articulos.pack(fill="both", expand=True, pady=(0, 10))
         self.lista_mis_articulos.bind("<Double-1>", self._abrir_mi_articulo_doble_clic)
+        self.lista_mis_articulos.bind("<Button-3>", self._menu_contextual_mis_articulos)
 
         # --- COLUMNA DERECHA: MIS COLECCIONES ---
         frame_der = ttk.Frame(self.tab_mi_espacio)
