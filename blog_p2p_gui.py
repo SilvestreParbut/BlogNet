@@ -13,6 +13,10 @@ import sqlite3
 import base64
 import io
 import threading
+import socket
+import nacl.signing
+import nacl.encoding
+import nacl.utils
 from PIL import Image, ImageTk
 from librats_py import RatsNode, LogLevel, set_log_level
 
@@ -283,6 +287,8 @@ class BlogP2PApp:
         self.contador_imagenes = 0
 
         self.limite_mb = 100 
+        self.llave_privada = None
+        self.llave_publica = None
         self.pagina_actual = 1
         self.articulos_por_pagina = 20
         self.ancho_columnas = 80  # <--- CONTROL DE ANCHO DINÁMICO
@@ -341,8 +347,56 @@ class BlogP2PApp:
         os.makedirs("./blog_state", exist_ok=True)
         self.conn = sqlite3.connect(ARCHIVO_DB)
         self.cursor = self.conn.cursor()
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS kv_store (clave TEXT PRIMARY KEY, valor TEXT)")
+        
+        # Tabla para configuraciones simples (nombre, descripción, horario, etc)
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT)")
+        # Tablas para los artículos y perfiles
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS articulos_propios (id TEXT PRIMARY KEY, datos TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS articulos_descubiertos (id TEXT PRIMARY KEY, datos TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS articulos_guardados (id TEXT PRIMARY KEY, datos TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS perfiles (id TEXT PRIMARY KEY, datos TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS colecciones (id TEXT PRIMARY KEY, datos TEXT, es_propia INTEGER)")
         self.conn.commit()
+        
+        # Llamamos a la migración por si el usuario tiene la base de datos vieja
+        self._migrar_datos_viejos()
+
+    def _migrar_datos_viejos(self):
+        try:
+            self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='kv_store'")
+            if not self.cursor.fetchone():
+                return # No hay datos viejos, no hay nada que migrar
+
+            print("🔄 Migrando base de datos antigua a nuevo formato...")
+            self.cursor.execute("SELECT clave, valor FROM kv_store")
+            filas = self.cursor.fetchall()
+            for clave, valor_json in filas:
+                if clave == "mis_articulos":
+                    for k, v in json.loads(valor_json).items():
+                        self.cursor.execute("INSERT OR REPLACE INTO articulos_propios (id, datos) VALUES (?, ?)", (k, json.dumps(v, ensure_ascii=False)))
+                elif clave == "articulos_descubiertos":
+                    for v in json.loads(valor_json):
+                        self.cursor.execute("INSERT OR REPLACE INTO articulos_descubiertos (id, datos) VALUES (?, ?)", (v["id"], json.dumps(v, ensure_ascii=False)))
+                elif clave == "articulos_guardados":
+                    for k, v in json.loads(valor_json).items():
+                        self.cursor.execute("INSERT OR REPLACE INTO articulos_guardados (id, datos) VALUES (?, ?)", (k, json.dumps(v, ensure_ascii=False)))
+                elif clave == "perfiles_autores":
+                    for k, v in json.loads(valor_json).items():
+                        self.cursor.execute("INSERT OR REPLACE INTO perfiles (id, datos) VALUES (?, ?)", (k, json.dumps(v, ensure_ascii=False)))
+                elif clave == "mis_colecciones":
+                    for k, v in json.loads(valor_json).items():
+                        self.cursor.execute("INSERT OR REPLACE INTO colecciones (id, datos, es_propia) VALUES (?, ?, 1)", (k, json.dumps(v, ensure_ascii=False)))
+                elif clave == "colecciones_descubiertas":
+                    for k, v in json.loads(valor_json).items():
+                        self.cursor.execute("INSERT OR REPLACE INTO colecciones (id, datos, es_propia) VALUES (?, ?, 0)", (k, json.dumps(v, ensure_ascii=False)))
+                else:
+                    self.cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (clave, valor_json))
+            
+            self.cursor.execute("DROP TABLE kv_store")
+            self.conn.commit()
+            print("✅ Migración completada con éxito.")
+        except Exception as e:
+            print(f"Error en migración: {e}")
 
     def _guardar_kv(self, clave, valor):
         self.cursor.execute("INSERT OR REPLACE INTO kv_store (clave, valor) VALUES (?, ?)", 
@@ -358,37 +412,59 @@ class BlogP2PApp:
 
     def _cargar_datos(self):
         try:
-            self.nombre_usuario = self._leer_kv("nombre_usuario", "Usuario Anónimo")
-            self.mis_articulos = self._leer_kv("mis_articulos", {})
-            self.articulos_descubiertos = self._leer_kv("articulos_descubiertos", [])
-            self.articulos_guardados = self._leer_kv("articulos_guardados", {})
-            self.autores_seguidos = set(self._leer_kv("autores_seguidos", []))
-            self.autores_respaldados = set(self._leer_kv("autores_respaldados", []))
-            self.mi_descripcion = self._leer_kv("mi_descripcion", "")
-            self.perfiles_autores = self._leer_kv("perfiles_autores", {})
-            self.limite_mb = self._leer_kv("limite_mb", 100)
-            self.ancho_columnas = self._leer_kv("ancho_columnas", 80)
-            self.borradores = self._leer_kv("borradores", {})
-            self.notificaciones_etiquetas = self._leer_kv("notificaciones_etiquetas", [])
-            self.etiquetas_revocadas = self._leer_kv("etiquetas_revocadas", {})
-            self.mis_colecciones = self._leer_kv("mis_colecciones", {})
-            self.colecciones_descubiertas = self._leer_kv("colecciones_descubiertas", {})
-            self.lapidas = set(self._leer_kv("lapidas", []))
-            respaldos_raw = self._leer_kv("respaldos_red", {})
-            self.respaldos_red = {k: list(v) for k, v in respaldos_raw.items()}
+            # 1. Cargar configuraciones simples
+            self.cursor.execute("SELECT clave, valor FROM config")
+            for clave, valor in self.cursor.fetchall():
+                val = json.loads(valor)
+                if clave == "autores_seguidos": self.autores_seguidos = set(val)
+                elif clave == "autores_respaldados": self.autores_respaldados = set(val)
+                elif clave == "lapidas": self.lapidas = set(val)
+                elif clave == "notificaciones_etiquetas": self.notificaciones_etiquetas = val
+                elif clave == "etiquetas_revocadas": self.etiquetas_revocadas = val
+                elif clave == "borradores": self.borradores = val
+                elif clave == "respaldos_red": self.respaldos_red = val
+                else:
+                    if hasattr(self, clave):
+                        setattr(self, clave, val)
+
+            # 2. Cargar artículos
+            self.cursor.execute("SELECT id, datos FROM articulos_propios")
+            self.mis_articulos = {r[0]: json.loads(r[1]) for r in self.cursor.fetchall()}
             
-            # --- NUEVO: Cargar datos del horario ---
-            self.mi_horario = self._leer_kv("mi_horario", "")
-            self.mi_utc_offset = self._leer_kv("mi_utc_offset", 0.0)
-            # ---------------------------------------
+            self.cursor.execute("SELECT id, datos FROM articulos_descubiertos")
+            self.articulos_descubiertos = [json.loads(r[1]) for r in self.cursor.fetchall()]
             
+            self.cursor.execute("SELECT id, datos FROM articulos_guardados")
+            self.articulos_guardados = {r[0]: json.loads(r[1]) for r in self.cursor.fetchall()}
+            
+            # 3. Cargar perfiles
+            self.cursor.execute("SELECT id, datos FROM perfiles")
+            self.perfiles_autores = {r[0]: json.loads(r[1]) for r in self.cursor.fetchall()}
+            
+            # 4. Cargar colecciones
+            self.cursor.execute("SELECT id, datos, es_propia FROM colecciones")
+            for r in self.cursor.fetchall():
+                if r[2] == 1: self.mis_colecciones[r[0]] = json.loads(r[1])
+                else: self.colecciones_descubiertas[r[0]] = json.loads(r[1])
+
+            # Cargar o generar llaves criptográficas
+            sk_guardada = self._leer_kv("llave_privada", "")
+            if sk_guardada:
+                self.llave_privada = nacl.signing.SigningKey(sk_guardada.encode(), encoder=nacl.encoding.HexEncoder)
+                self.llave_publica = self.llave_privada.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()
+            else:
+                # Si no existe, generamos una nueva
+                self.llave_privada = nacl.signing.SigningKey.generate()
+                self.llave_publica = self.llave_privada.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()
+                self._guardar_kv("llave_privada", self.llave_privada.encode(encoder=nacl.encoding.HexEncoder).decode())
+                print("🔑 Nuevas llaves criptográficas generadas para tu nodo.")
+                
         except Exception as e:
             print(f"Error al cargar datos de SQLite: {e}")
+
     def _guardar_datos(self):
-        # Si ya había un temporizador, lo cancelamos
         if hasattr(self, '_save_timer') and self._save_timer:
             self.root.after_cancel(self._save_timer)
-        # Programamos el guardado real en 2 segundos
         self._save_timer = self.root.after(2000, self._ejecutar_guardado_real)
 
     def _ejecutar_guardado_real(self):
@@ -397,29 +473,73 @@ class BlogP2PApp:
             self.root.after(0, self._ejecutar_guardado_real)
             return
         try:
-            self._guardar_kv("nombre_usuario", self.nombre_usuario)
-            self._guardar_kv("mis_articulos", self.mis_articulos)
-            self._guardar_kv("articulos_descubiertos", self.articulos_descubiertos)
-            self._guardar_kv("articulos_guardados", self.articulos_guardados)
-            self._guardar_kv("autores_seguidos", list(self.autores_seguidos))
-            self._guardar_kv("autores_respaldados", list(self.autores_respaldados))
-            self._guardar_kv("mi_descripcion", self.mi_descripcion)
-            self._guardar_kv("perfiles_autores", self.perfiles_autores)
-            self._guardar_kv("limite_mb", self.limite_mb)
-            self._guardar_kv("ancho_columnas", self.ancho_columnas)
-            self._guardar_kv("borradores", self.borradores)
-            self._guardar_kv("mis_colecciones", self.mis_colecciones)
-            self._guardar_kv("colecciones_descubiertas", self.colecciones_descubiertas)
-            self._guardar_kv("lapidas", list(self.lapidas))
-            self._guardar_kv("respaldos_red", {k: list(v) for k, v in self.respaldos_red.items()})
+            # 1. Guardar Configuraciones
+            config_data = {
+                "nombre_usuario": self.nombre_usuario, "mi_descripcion": self.mi_descripcion,
+                "mi_horario": self.mi_horario, "mi_utc_offset": self.mi_utc_offset,
+                "limite_mb": self.limite_mb, "ancho_columnas": self.ancho_columnas,
+                "autores_seguidos": list(self.autores_seguidos), "autores_respaldados": list(self.autores_respaldados),
+                "lapidas": list(self.lapidas), "borradores": self.borradores,
+                "notificaciones_etiquetas": self.notificaciones_etiquetas, "etiquetas_revocadas": self.etiquetas_revocadas,
+                "respaldos_red": self.respaldos_red
+            }
+            for k, v in config_data.items():
+                self.cursor.execute("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", (k, json.dumps(v, ensure_ascii=False)))
+
+            # 2. Guardar Artículos (y borrar los que ya no existen)
+            for aid, art in self.mis_articulos.items():
+                self.cursor.execute("INSERT OR REPLACE INTO articulos_propios (id, datos) VALUES (?, ?)", (aid, json.dumps(art, ensure_ascii=False)))
+            ids_propios = list(self.mis_articulos.keys())
+            if ids_propios:
+                self.cursor.execute(f"DELETE FROM articulos_propios WHERE id NOT IN ({','.join('?' * len(ids_propios))})", ids_propios)
+            else:
+                self.cursor.execute("DELETE FROM articulos_propios")
+
+            for art in self.articulos_descubiertos:
+                self.cursor.execute("INSERT OR REPLACE INTO articulos_descubiertos (id, datos) VALUES (?, ?)", (art["id"], json.dumps(art, ensure_ascii=False)))
+            ids_descubiertos = [a["id"] for a in self.articulos_descubiertos]
+            if ids_descubiertos:
+                self.cursor.execute(f"DELETE FROM articulos_descubiertos WHERE id NOT IN ({','.join('?' * len(ids_descubiertos))})", ids_descubiertos)
+            else:
+                self.cursor.execute("DELETE FROM articulos_descubiertos")
+
+            for aid, art in self.articulos_guardados.items():
+                self.cursor.execute("INSERT OR REPLACE INTO articulos_guardados (id, datos) VALUES (?, ?)", (aid, json.dumps(art, ensure_ascii=False)))
+            ids_guardados = list(self.articulos_guardados.keys())
+            if ids_guardados:
+                self.cursor.execute(f"DELETE FROM articulos_guardados WHERE id NOT IN ({','.join('?' * len(ids_guardados))})", ids_guardados)
+            else:
+                self.cursor.execute("DELETE FROM articulos_guardados")
+
+            # 3. Guardar Perfiles
+            for pid, perfil in self.perfiles_autores.items():
+                self.cursor.execute("INSERT OR REPLACE INTO perfiles (id, datos) VALUES (?, ?)", (pid, json.dumps(perfil, ensure_ascii=False)))
             
-            # --- NUEVO: Guardar datos del horario ---
-            self._guardar_kv("mi_horario", self.mi_horario)
-            self._guardar_kv("mi_utc_offset", self.mi_utc_offset)
-            # ----------------------------------------
-            
+            # 4. Guardar Colecciones
+            for cid, col in self.mis_colecciones.items():
+                self.cursor.execute("INSERT OR REPLACE INTO colecciones (id, datos, es_propia) VALUES (?, ?, 1)", (cid, json.dumps(col, ensure_ascii=False)))
+            for cid, col in self.colecciones_descubiertas.items():
+                self.cursor.execute("INSERT OR REPLACE INTO colecciones (id, datos, es_propia) VALUES (?, ?, 0)", (cid, json.dumps(col, ensure_ascii=False)))
+
+            self.conn.commit()
         except Exception as e:
             print(f"Error al guardar en SQLite: {e}")
+
+    def _guardar_like_rapido(self, articulo_id):
+        try:
+            if articulo_id in self.mis_articulos:
+                art = self.mis_articulos[articulo_id]
+                self.cursor.execute("INSERT OR REPLACE INTO articulos_propios (id, datos) VALUES (?, ?)", (articulo_id, json.dumps(art, ensure_ascii=False)))
+            for a in self.articulos_descubiertos:
+                if a["id"] == articulo_id:
+                    self.cursor.execute("INSERT OR REPLACE INTO articulos_descubiertos (id, datos) VALUES (?, ?)", (articulo_id, json.dumps(a, ensure_ascii=False)))
+                    break
+            if articulo_id in self.articulos_guardados:
+                art = self.articulos_guardados[articulo_id]
+                self.cursor.execute("INSERT OR REPLACE INTO articulos_guardados (id, datos) VALUES (?, ?)", (articulo_id, json.dumps(art, ensure_ascii=False)))
+            self.conn.commit()
+        except Exception as e:
+            print(f"Error guardando like rápido: {e}")
 
     def _calcular_espacio_usado(self):
         total_bytes = 0
@@ -884,6 +1004,25 @@ class BlogP2PApp:
         if item:
             self.lista_mis_articulos.selection_set(item)
             self._abrir_por_id(item)
+
+    def _firmar_mensaje(self, diccionario):
+        """Firma un diccionario con la llave privada del usuario."""
+        if not self.llave_privada: return ""
+        # Convertimos el diccionario a texto ordenado para que la firma sea exacta
+        mensaje_bytes = json.dumps(diccionario, sort_keys=True).encode('utf-8')
+        signed = self.llave_privada.sign(mensaje_bytes)
+        return signed.signature.hex()
+
+    def _verificar_firma(self, diccionario, firma_hex, llave_publica_hex):
+        """Verifica si la firma coincide con el mensaje y la llave pública."""
+        if not firma_hex or not llave_publica_hex: return False
+        try:
+            vk = nacl.signing.VerifyKey(llave_publica_hex.encode(), encoder=nacl.encoding.HexEncoder)
+            mensaje_bytes = json.dumps(diccionario, sort_keys=True).encode('utf-8')
+            vk.verify(mensaje_bytes, bytes.fromhex(firma_hex))
+            return True
+        except Exception:
+            return False
 
     def _t(self, texto):
         return TRADUCCIONES.get(self.lang_code, TRADUCCIONES["es"]).get(texto, texto)
@@ -1862,8 +2001,10 @@ class BlogP2PApp:
                 "nombre": self.nombre_usuario, 
                 "descripcion": self.mi_descripcion,
                 "horario": self.mi_horario,
-                "utc_offset": self.mi_utc_offset
+                "utc_offset": self.mi_utc_offset,
+                "llave": self.llave_publica
             }
+            msg_perfil["firma"] = self._firmar_mensaje(msg_perfil)
             self.node.publish("blog:system:profiles", json.dumps(msg_perfil).encode())
             
             for art in self.mis_articulos.values():
@@ -2092,22 +2233,32 @@ class BlogP2PApp:
         if self.articulo_actual_id in self.articulos_guardados:
             self.articulos_guardados[self.articulo_actual_id]["likes"] = likes_actuales
             
-        self._guardar_datos()
+        self._guardar_like_rapido(self.articulo_actual_id)
         
-        # 2. ¡LA MAGIA! Refrescar la lista de Descubrir para que la estrella (⭐) suba a 1
+        # 2. Refrescar la lista de Descubrir para que la estrella suba a 1
         self._aplicar_filtro()
 
-        # 3. Enviar al autor de forma silenciosa (sin ventanas de error si está desconectado)
+        # 3. FIRMAR Y ENVIAR AL AUTOR (PASO 4)
+        payload = {"id": self.articulo_actual_id, "peer": self.node.local_id, "llave": self.llave_publica}
+        payload["firma"] = self._firmar_mensaje(payload)
+
         from librats_py.exceptions import RatsNoSuchPeerError
         try:
-            self.node.send_json(anuncio["autor"], "like_article", {"id": self.articulo_actual_id, "peer": self.node.local_id})
+            self.node.send_json(anuncio["autor"], "like_article", payload)
             print("⭐ Like enviado al autor.")
         except RatsNoSuchPeerError:
-            print(f"⭐ Like guardado localmente. El autor {anuncio['autor'][:8]} está offline, se enviará cuando vuelva a conectarse.")
+            print(f"⭐ Like guardado localmente. El autor {anuncio['autor'][:8]} está offline.")
         except Exception as e:
             print(f"Error enviando like: {e}")
 
     def _al_recibir_like(self, peer_id, value):
+        firma = value.pop("firma", "")
+        llave = value.get("llave", "")
+        
+        if not self._verificar_firma(value, firma, llave):
+            print(f"🚨 ALERTA: Like falso detectado de {peer_id[:8]}")
+            return
+
         articulo_id = value.get("id")
         peer_que_vota = value.get("peer")
         
@@ -2116,7 +2267,7 @@ class BlogP2PApp:
             if peer_que_vota not in likes:
                 likes.append(peer_que_vota)
                 self.mis_articulos[articulo_id]["likes"] = likes
-                self._guardar_datos()
+                self._guardar_like_rapido(articulo_id)
                 if self.articulo_actual_id == articulo_id:
                     self.lbl_count.config(text=f"({len(likes)})")
 
@@ -2364,8 +2515,27 @@ class BlogP2PApp:
 
     # --- CALLBACKS DE RED ---
     def _al_recibir_anuncio(self, peer_id, topic, data):
-        # Solo encolamos el mensaje en bruto. Nada de JSON, nada de SQLite aquí.
+        # Si la cola de procesamiento ya está muy llena (ej. 200 mensajes), ignoramos para no colapsar la RAM
+        if self.event_queue.qsize() > 200:
+            print("⚠️ Cola de red saturada. Ignorando anuncio.")
+            return
+            
+        # Rechazar mensajes que pesen más de 1 MB (los anuncios solo son metadatos)
+        if len(data) > 1024 * 1024:
+            print(f"🚨 Anuncio gigante de {peer_id[:8]} rechazado por seguridad.")
+            return
+            
         self.event_queue.put(("anuncio_crudo", (peer_id, topic, data)))
+
+    def _al_pedir_articulo(self, peer_id, value):
+        self.event_queue.put(("peticion_articulo", (peer_id, value)))
+
+    def _al_recibir_contenido(self, peer_id, value):
+        # Si la cola está llena, rechazamos
+        if self.event_queue.qsize() > 200:
+            return
+            
+        self.event_queue.put(("contenido_articulo", value))
 
     def _al_pedir_articulo(self, peer_id, value):
         # Solo encolamos la petición. El trabajo pesado va al hilo principal.
@@ -2424,11 +2594,21 @@ class BlogP2PApp:
         self.root.after(100, self._procesar_cola)
 
     def _responder_peticion_articulo(self, peer_id, value):
-        target = value.get("target") if isinstance(value, dict) else None
+        if not isinstance(value, dict):
+            return
+            
+        target = value.get("target")
         if target and target != self.node.local_id:
             return 
 
-        articulo_id = value.get("id") if isinstance(value, dict) else None
+        articulo_id = value.get("id")
+        if not articulo_id or not isinstance(articulo_id, str):
+            return
+            
+        # Evitar inyecciones de IDs gigantes
+        if len(articulo_id) > 100:
+            return
+
         art = None
         if articulo_id in self.mis_articulos:
             art = self.mis_articulos[articulo_id]
@@ -2441,9 +2621,7 @@ class BlogP2PApp:
         autor_nombre = art.get("autor_nombre") or self.nombre_usuario
         autor_desc = art.get("autor_descripcion") or self.mi_descripcion
 
-        # Calcular cuántos respaldos conocemos
         num_resp = len(self.respaldos_red.get(articulo_id, {}))
-        # Si yo no soy el autor pero tengo el artículo guardado, al menos YO soy un respaldo.
         if num_resp == 0 and articulo_id in self.articulos_guardados:
             num_resp = 1
 
@@ -2489,40 +2667,57 @@ class BlogP2PApp:
     def _procesar_anuncio_crudo(self, peer_id, topic, data):
         try:
             mensaje = json.loads(data.decode())
+            
             if topic == "blog:system:profiles":
-                self.perfiles_autores[mensaje["autor"]] = {
-                    "nombre": mensaje["nombre"], 
-                    "descripcion": mensaje["descripcion"],
-                    "horario": mensaje.get("horario", ""),
-                    "utc_offset": mensaje.get("utc_offset", 0.0)
-                }
-                self._guardar_datos()
-                self.event_queue.put(("perfil_actualizado", mensaje["autor"]))
+                firma = mensaje.pop("firma", "")
+                llave = mensaje.get("llave", "")
+                if self._verificar_firma(mensaje, firma, llave):
+                    self.perfiles_autores[mensaje["autor"]] = {
+                        "nombre": str(mensaje.get("nombre", "Anónimo"))[:50], # Límite de 50 letras
+                        "descripcion": str(mensaje.get("descripcion", ""))[:500], # Límite de 500 letras
+                        "horario": str(mensaje.get("horario", ""))[:50],
+                        "utc_offset": float(mensaje.get("utc_offset", 0.0)),
+                        "llave": llave
+                    }
+                    self._guardar_datos()
+                    self.event_queue.put(("perfil_actualizado", mensaje["autor"]))
                 return
 
             anuncio = mensaje
             if anuncio.get("is_delete"):
-                self._procesar_lapida(anuncio["id"])
+                firma = anuncio.pop("firma", "")
+                llave = anuncio.get("llave", "")
+                if self._verificar_firma(anuncio, firma, llave):
+                    self._procesar_lapida(anuncio["id"])
+                else:
+                    print("🚨 ALERTA: Intento de borrado falso bloqueado.")
                 return
 
-            # ¡LA MAGIA ESTÁ AQUÍ! Actualizamos sin borrar el horario si no viene
+            # VALIDACIÓN DE CAMPOS OBLIGATORIOS
+            if "id" not in anuncio or "titulo" not in anuncio or "autor" not in anuncio:
+                print("🚨 Anuncio malformado rechazado.")
+                return
+
+            # SANEAMIENTO (Evitar textos absurdamente largos)
+            anuncio["titulo"] = str(anuncio.get("titulo", "Sin título"))[:200]
+            anuncio["tematica"] = str(anuncio.get("tematica", ""))[:50]
+            if "etiquetas" in anuncio and isinstance(anuncio["etiquetas"], list):
+                anuncio["etiquetas"] = [str(e)[:30] for e in anuncio["etiquetas"]][:10] # Max 10 etiquetas
+
             if "autor" in anuncio:
                 autor_id = anuncio["autor"]
                 if autor_id not in self.perfiles_autores:
                     self.perfiles_autores[autor_id] = {}
                 
                 if "autor_nombre" in anuncio:
-                    self.perfiles_autores[autor_id]["nombre"] = anuncio["autor_nombre"]
+                    self.perfiles_autores[autor_id]["nombre"] = str(anuncio["autor_nombre"])[:50]
                 if "autor_descripcion" in anuncio:
-                    self.perfiles_autores[autor_id]["descripcion"] = anuncio["autor_descripcion"]
+                    self.perfiles_autores[autor_id]["descripcion"] = str(anuncio["autor_descripcion"])[:500]
                 if "autor_horario" in anuncio:
-                    self.perfiles_autores[autor_id]["horario"] = anuncio["autor_horario"]
+                    self.perfiles_autores[autor_id]["horario"] = str(anuncio["autor_horario"])[:50]
                 if "autor_utc_offset" in anuncio:
-                    self.perfiles_autores[autor_id]["utc_offset"] = anuncio["autor_utc_offset"]
-                
-                self._guardar_datos()
+                    self.perfiles_autores[autor_id]["utc_offset"] = float(anuncio["autor_utc_offset"])
 
-            # Ignorar si es un artículo con lápida
             aid_anuncio = anuncio["id"]
             if aid_anuncio in self.lapidas:
                 return
@@ -2536,8 +2731,8 @@ class BlogP2PApp:
             if anuncio.get("is_update"):
                 try:
                     self.node.broadcast_json("get_article", {"id": anuncio["id"], "target": anuncio["autor"]})
-                except Exception as e:
-                    print(f"Error al pedir actualización: {e}")
+                except Exception:
+                    pass
         except Exception as e:
             print(f"Error procesando anuncio: {e}")
 
@@ -2557,16 +2752,27 @@ class BlogP2PApp:
 
     def _procesar_contenido_recibido(self, value):
         aid = value.get("id")
+        
+        # VALIDACIÓN DE TAMAÑO DEL ARTÍCULO COMPLETO
+        try:
+            tamano_mb = len(json.dumps(value).encode('utf-8')) / (1024 * 1024)
+            if tamano_mb > 5.0: # Si pesa más de 5 MB, lo rechazamos
+                print(f"🚨 Artículo {aid} rechazado: excede el límite de 5 MB.")
+                return
+        except:
+            pass
+
         if aid in self.respaldos_pendientes:
             self.respaldos_pendientes.remove(aid)
-            tamano_nuevo = len(json.dumps(value).encode('utf-8')) / (1024 * 1024)
-            if (self._calcular_espacio_usado() + tamano_nuevo) > self.limite_mb:
+            
+            if (self._calcular_espacio_usado() + tamano_mb) > self.limite_mb:
                 print(f"⚠️ No hay espacio para respaldar {aid}")
                 return
+                
             anuncio = next((a for a in self.articulos_descubiertos if a["id"] == aid), None)
             if anuncio:
                 self.articulos_guardados[aid] = {
-                    "id": aid, "titulo": value.get("titulo", anuncio["titulo"]),
+                    "id": aid, "titulo": str(value.get("titulo", anuncio["titulo"]))[:200],
                     "contenido": value.get("contenido"), "autor": value.get("autor", anuncio.get("autor")),
                     "autor_nombre": value.get("autor_nombre", anuncio.get("autor_nombre")),
                     "autor_descripcion": value.get("autor_descripcion", anuncio.get("autor_descripcion")),
@@ -2584,29 +2790,25 @@ class BlogP2PApp:
 
             if aid in self.articulos_guardados:
                 self.articulos_guardados[aid]["contenido"] = value.get("contenido")
-                self.articulos_guardados[aid]["titulo"] = value.get("titulo")
+                self.articulos_guardados[aid]["titulo"] = str(value.get("titulo", ""))[:200]
                 self.articulos_guardados[aid]["etiquetas"] = value.get("etiquetas", [])
                 self.articulos_guardados[aid]["tematica"] = value.get("tematica", "")
                 self.articulos_guardados[aid]["autor"] = value.get("autor", self.articulos_guardados[aid].get("autor"))
                 self.articulos_guardados[aid]["autor_nombre"] = value.get("autor_nombre", self.articulos_guardados[aid].get("autor_nombre"))
                 self.articulos_guardados[aid]["autor_descripcion"] = value.get("autor_descripcion", self.articulos_guardados[aid].get("autor_descripcion", ""))
                 self.articulos_guardados[aid]["likes"] = value.get("likes", [])
-                self.articulos_guardados[aid]["respaldos"] = value.get("respaldos", self.articulos_guardados[aid].get("respaldos", 1))  # <-- NUEVO
+                self.articulos_guardados[aid]["respaldos"] = value.get("respaldos", self.articulos_guardados[aid].get("respaldos", 1))
                 self._refrescar_guardados()
 
             for a in self.articulos_descubiertos:
                 if a["id"] == aid:
-                    a["titulo"] = value.get("titulo", a["titulo"])
+                    a["titulo"] = str(value.get("titulo", a["titulo"]))[:200]
                     a["etiquetas"] = value.get("etiquetas", a.get("etiquetas", []))
                     a["tematica"] = value.get("tematica", a.get("tematica", ""))
                     a["likes"] = value.get("likes", a.get("likes", []))
                     a["idioma"] = value.get("idioma", a.get("idioma", "Español"))
-                    
-                    # NUEVA LÓGICA: Si el mensaje trae un número de respaldos mayor que el que teníamos, lo actualizamos
                     respaldos_recibidos = value.get("respaldos", 0)
-                    if respaldos_recibidos > 0:
-                        a["respaldos"] = respaldos_recibidos
-                    
+                    if respaldos_recibidos > 0: a["respaldos"] = respaldos_recibidos
                     a["autor"] = value.get("autor", a.get("autor"))
                     a["autor_nombre"] = value.get("autor_nombre", a.get("autor_nombre"))
                     a["autor_descripcion"] = value.get("autor_descripcion", a.get("autor_descripcion"))
@@ -2616,9 +2818,6 @@ class BlogP2PApp:
 
             if self.articulo_actual_id == aid:
                 self._mostrar_articulo(aid, value.get("titulo", ""), value.get("contenido"), value.get("likes", []))
-                print(f"🔄 Vista de lectura actualizada: {value.get('titulo')}")
-            else:
-                print(f"🔄 Artículo actualizado en segundo plano: {value.get('titulo')}")
 
     # --- LISTA PRINCIPAL Y FILTROS ---
     def _agregar_a_lista(self, anuncio):
@@ -3549,7 +3748,10 @@ class BlogP2PApp:
             # Registrar la lápida
             self.lapidas.add(aid)
             
-            mensaje_borrado = {"id": aid, "is_delete": True, "autor": self.node.local_id}
+            # FIRMAR EL MENSAJE DE BORRADO (PASO 4)
+            mensaje_borrado = {"id": aid, "is_delete": True, "autor": self.node.local_id, "llave": self.llave_publica}
+            mensaje_borrado["firma"] = self._firmar_mensaje(mensaje_borrado)
+            
             for tematica in TEMATICAS:
                 self.node.publish(f"blog:tematica:{tematica}", json.dumps(mensaje_borrado).encode())
             
