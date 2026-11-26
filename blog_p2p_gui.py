@@ -1295,7 +1295,7 @@ class BlogP2PApp:
         self.btn_quitar_etiqueta = tk.Button(self.frame_botones_lectura, text="Quitarme la etiqueta", bg="#d9534f", fg="white", font=("TkDefaultFont", 9, "bold"), command=self._quitar_etiqueta_actual)
 
         # 2. Likes
-        self.lbl_heart = tk.Label(self.frame_botones_lectura, text="⭐", font=("Helvetica", 16), fg="#D4AF37", cursor="hand2")
+        self.lbl_heart = tk.Label(self.frame_botones_lectura, text="★", font=("Segoe UI Symbol", 18), fg="#D4AF37", cursor="hand2")
         self.lbl_count = tk.Label(self.frame_botones_lectura, text="(0)", font=("Helvetica", 13, "bold"), fg="black", cursor="hand2")
         self.lbl_heart.bind("<Button-1>", self._dar_me_gusta)
         self.lbl_count.bind("<Button-1>", self._dar_me_gusta)
@@ -2421,6 +2421,12 @@ class BlogP2PApp:
         autor_nombre = art.get("autor_nombre") or self.nombre_usuario
         autor_desc = art.get("autor_descripcion") or self.mi_descripcion
 
+        # Calcular cuántos respaldos conocemos
+        num_resp = len(self.respaldos_red.get(articulo_id, {}))
+        # Si yo no soy el autor pero tengo el artículo guardado, al menos YO soy un respaldo.
+        if num_resp == 0 and articulo_id in self.articulos_guardados:
+            num_resp = 1
+
         self._enviar_json_seguro(peer_id, "article_content", {
             "id": articulo_id, "titulo": art["titulo"], "contenido": art["contenido"],
             "likes": art.get("likes", []), "etiquetas": art.get("etiquetas", []),
@@ -2429,7 +2435,7 @@ class BlogP2PApp:
             "autor_horario": art.get("autor_horario", ""),
             "autor_utc_offset": art.get("autor_utc_offset", 0.0),
             "idioma": art.get("idioma", "Español"),
-            "respaldos": len(self.respaldos_red.get(articulo_id, []))
+            "respaldos": num_resp
         })
 
     def _procesar_lapida(self, aid):
@@ -2575,7 +2581,12 @@ class BlogP2PApp:
                     a["tematica"] = value.get("tematica", a.get("tematica", ""))
                     a["likes"] = value.get("likes", a.get("likes", []))
                     a["idioma"] = value.get("idioma", a.get("idioma", "Español"))
-                    a["respaldos"] = value.get("respaldos", a.get("respaldos", 0))
+                    
+                    # NUEVA LÓGICA: Si el mensaje trae un número de respaldos mayor que el que teníamos, lo actualizamos
+                    respaldos_recibidos = value.get("respaldos", 0)
+                    if respaldos_recibidos > 0:
+                        a["respaldos"] = respaldos_recibidos
+                    
                     a["autor"] = value.get("autor", a.get("autor"))
                     a["autor_nombre"] = value.get("autor_nombre", a.get("autor_nombre"))
                     a["autor_descripcion"] = value.get("autor_descripcion", a.get("autor_descripcion"))
@@ -3083,10 +3094,10 @@ class BlogP2PApp:
 
         if hasattr(self, 'lbl_metricas_respaldo'):
             if num_respaldos > 0:
-                self.lbl_metricas_respaldo.config(text=f"🟢 Respaldado por {num_respaldos} nodo(s) activos las últimas 24 horas")
+                self.lbl_metricas_respaldo.config(text=f"⚡ Respaldado por {num_respaldos} nodo(s) activos las últimas 24 horas")
             else:
-                self.lbl_metricas_respaldo.config(text="⚪ Aún no tiene respaldos activos en las últimas 24 horas")
-            self.lbl_metricas_respaldo.pack(pady=(5, 0))
+                self.lbl_metricas_respaldo.config(text="☁ Aún no tiene respaldos activos en las últimas 24 horas")
+                self.lbl_metricas_respaldo.pack(pady=(5, 0))
 
         # 4. Cargar el texto y los likes
         self._cambiar_texto_lectura(contenido, autor_id, autor_nombre)
@@ -3573,21 +3584,21 @@ class BlogP2PApp:
         
         # --- LÓGICA DE ESTADO DE CONEXIÓN ---
         if autor_id == self.node.local_id:
-            self.lbl_estado_conexion.config(text="Tú (en línea ahora)", foreground="green")
+            self.lbl_estado_conexion.config(text="● Tú (en línea ahora)", foreground="green")
         elif hasattr(self, '_esta_conectado') and self._esta_conectado(autor_id):
-            self.lbl_estado_conexion.config(text="🟢 En línea ahora", foreground="green")
+            self.lbl_estado_conexion.config(text="● En línea ahora", foreground="green")
         else:
             horario_autor = perfil.get("horario", "")
             if horario_autor:
-                self.lbl_estado_conexion.config(text=f"🕒 Suele conectarse: {horario_autor}", foreground="#555")
+                self.lbl_estado_conexion.config(text=f"◷ Suele conectarse: {horario_autor}", foreground="#555")
             else:
                 ultima_vez = perfil.get("ultima_conexion", 0)
                 if ultima_vez > 0:
                     import datetime
                     dt_local = datetime.datetime.fromtimestamp(ultima_vez)
-                    self.lbl_estado_conexion.config(text=f"Activo por última vez: {dt_local.strftime('%d/%m/%Y a las %H:%M')}", foreground="gray")
+                    self.lbl_estado_conexion.config(text=f"○ Activo por última vez: {dt_local.strftime('%d/%m/%Y a las %H:%M')}", foreground="gray")
                 else:
-                    self.lbl_estado_conexion.config(text="Estado de conexión desconocido", foreground="gray")
+                    self.lbl_estado_conexion.config(text="○ Estado de conexión desconocido", foreground="gray")
         # -----------------------------------
 
         self.texto_desc_autor.config(state="normal")
