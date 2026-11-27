@@ -3,6 +3,9 @@ os.environ['XMODIFIERS'] = '@im=none'
 import tkinter as tk
 from tkinter import ttk, messagebox, font, filedialog, simpledialog
 import json
+import binascii
+import hashlib
+import btpydht
 import math
 import re
 from ebooklib import epub
@@ -329,6 +332,16 @@ class BlogP2PApp:
         self._cargar_datos()
 
         self._construir_interfaz()
+
+        # Iniciar el motor DHT global de BitTorrent en un hilo separado
+        try:
+            self.dht = btpydht.DHT()
+            self.dht.start()
+            self.dht_esperando_articulo = None
+            print("✅ Motor DHT global iniciado (BitTorrent Mainline).")
+        except Exception as e:
+            print(f"⚠️ No se pudo iniciar la DHT: {e}")
+            self.dht = None
 
         self.node = RatsNode(0, protocol="blog-p2p/1.0", data_dir="./blog_state")
         self._configurar_nodo()
@@ -1012,6 +1025,41 @@ class BlogP2PApp:
         if item:
             self.lista_mis_articulos.selection_set(item)
             self._abrir_por_id(item)
+
+    def _anunciar_en_dht(self, articulo_id):
+        """Anuncia a la red global (BitTorrent DHT) que este nodo tiene el artículo."""
+        if not self.dht: return
+        try:
+            # Convertimos el ID en un hash de 20 bytes (formato estándar de BitTorrent)
+            info_hash = hashlib.sha1(articulo_id.encode('utf-8')).digest()
+            # Anunciamos nuestra IP y el puerto de librats donde realmente servimos el archivo
+            self.dht.announce_peer(info_hash, port=self.node.listen_port)
+            print(f"📢 Anunciado en DHT global: {articulo_id[:8]}")
+        except Exception as e:
+            print(f"Error anunciando en DHT: {e}")
+
+    def _buscar_en_dht(self, articulo_id):
+        """Busca en la DHT global quién tiene el artículo. Corre en un hilo separado."""
+        if not self.dht:
+            self.event_queue.put(("mostrar_mensaje_lectura", "El motor DHT no está disponible."))
+            return
+        try:
+            info_hash = hashlib.sha1(articulo_id.encode('utf-8')).digest()
+            # Buscamos los peers (IPs y puertos) que tengan este artículo
+            peers = self.dht.get_peers(info_hash)
+            
+            if peers:
+                # Si encontramos a alguien, nos conectamos al primero
+                ip, port = peers[0]
+                print(f"🎯 DHT encontró copia en: {ip}:{port}")
+                self.dht_esperando_articulo = articulo_id
+                self._conectar_a_peer(ip, port)
+            else:
+                self.event_queue.put(("mostrar_mensaje_lectura", "No se encontraron copias de este artículo en la DHT global.\n\nPuede que nadie lo haya respaldado aún."))
+        except Exception as e:
+            print(f"Error buscando en DHT: {e}")
+            self.event_queue.put(("mostrar_mensaje_lectura", "Hubo un error buscando en la red global."))
+
 
     def _firmar_mensaje(self, diccionario):
         """Firma un diccionario con la llave privada del usuario."""
@@ -1835,6 +1883,13 @@ class BlogP2PApp:
     def _al_conectar_peer(self, peer_id):
         print(f"🟢 ¡NUEVO PAR CONECTADO!: {peer_id[:12]}...")
         
+        # Si estábamos esperando un artículo de la DHT, lo pedimos inmediatamente a este nuevo peer
+        if hasattr(self, 'dht_esperando_articulo') and self.dht_esperando_articulo:
+            articulo_id = self.dht_esperando_articulo
+            self.dht_esperando_articulo = None
+            self._cambiar_texto_lectura("Conectado al nodo respaldante. Descargando artículo...")
+            self._pedir_articulo_con_reintentos(peer_id, articulo_id)
+
         # Actualizar la hora de última conexión de este peer
         if peer_id not in self.perfiles_autores:
             self.perfiles_autores[peer_id] = {}
@@ -2147,6 +2202,7 @@ class BlogP2PApp:
             self.node.publish(f"blog:etiqueta:{etiqueta.lower()}:{mes_actual}", json.dumps(anuncio).encode())
 
         self._agregar_a_lista(anuncio)
+        self._anunciar_en_dht(articulo_id)
         self._guardar_datos()
         self._refrescar_mis_articulos()
         self._actualizar_barra_espacio()
@@ -2618,6 +2674,8 @@ class BlogP2PApp:
                     refrescar_pantalla = True
                 elif tipo == "refrescar_ui":
                     refrescar_pantalla = True
+                elif tipo == "mostrar_mensaje_lectura":
+                    self._cambiar_texto_lectura(dato)
                 elif tipo == "actualizar_respaldos":
                     if self.articulo_actual_id == dato:
                         num_respaldos = len(self.respaldos_red.get(dato, []))
@@ -3185,10 +3243,9 @@ class BlogP2PApp:
                     self._cambiar_texto_lectura(f"El autor está desconectado.\nSolicitando copia al nodo respaldador...")
                     self._pedir_articulo_con_reintentos(peer_amigo, articulo_id)
                 else:
-                    # No conocemos a nadie que lo tenga. Broadcast de emergencia.
-                    self._cambiar_texto_lectura("El autor está desconectado.\nBuscando copias respaldadas en toda la red...")
-                    self.node.broadcast_json("get_article", {"id": articulo_id}) 
-                    self.root.after(10000, lambda: self._timeout_busqueda(articulo_id))
+                    # No conocemos a nadie. Buscamos en la DHT global (en un hilo separado para no congelar la pantalla).
+                    self._cambiar_texto_lectura("El autor está desconectado.\nBuscando copias en la red global (DHT)... Esto puede tardar unos segundos.")
+                    threading.Thread(target=self._buscar_en_dht, args=(articulo_id,), daemon=True).start()
 
     def _timeout_busqueda(self, articulo_id):
         # Solo mostramos el aviso si seguimos esperando el mismo artículo
@@ -3586,6 +3643,8 @@ class BlogP2PApp:
             # Guardarlo en nuestra propia tabla
             if aid not in self.quien_tiene: self.quien_tiene[aid] = []
             if self.node.local_id not in self.quien_tiene[aid]: self.quien_tiene[aid].append(self.node.local_id)
+            # Anunciar en la DHT global
+            self._anunciar_en_dht(aid)
         except Exception as e:
             print(f"Error al anunciar copia: {e}")
         

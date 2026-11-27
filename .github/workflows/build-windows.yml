@@ -25,7 +25,7 @@ jobs:
     - name: Build with PyInstaller
       run: |
         $RATS_DLL = python -c "import librats_py, os; print(os.path.join(os.path.dirname(librats_py.__file__), 'rats.dll'))"
-        pyinstaller --onefile --windowed --name BlogNet --hidden-import nacl --hidden-import _cffi_backend --collect-all nacl --add-binary "$RATS_DLL;." blog_p2p_gui.py
+        pyinstaller --onefile --windowed --name BlogNet --hidden-import nacl --hidden-import pythontorrentdht --hidden-import _cffi_backend --collect-all nacl --add-binary "$RATS_DLL;." blog_p2p_gui.py
 
     - name: Upload Executable
       uses: actions/upload-artifact@v4

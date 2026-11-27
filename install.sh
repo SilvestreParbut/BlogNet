@@ -22,7 +22,7 @@ fi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install pillow librats ebooklib pynacl
+pip install pillow librats ebooklib pynacl pythontorrentdht
 
 # 4. Create the executable launcher
 sudo tee /usr/local/bin/blognet > /dev/null << 'EOF'
