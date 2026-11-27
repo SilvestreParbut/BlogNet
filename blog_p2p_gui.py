@@ -329,10 +329,11 @@ class BlogP2PApp:
         self._cargar_datos()
 
         self._construir_interfaz()
-        self._refrescar_todo_visual()
 
         self.node = RatsNode(0, protocol="blog-p2p/1.0", data_dir="./blog_state")
         self._configurar_nodo()
+
+        self._refrescar_todo_visual()
         
         # ¡NUEVO! Iniciar la red en un hilo separado para que la ventana no se congele
         threading.Thread(target=self.node.start, daemon=True).start()
@@ -2099,8 +2100,8 @@ class BlogP2PApp:
             "tematica": tematica, "contenido": contenido_rico,
             "autor": self.node.local_id, "autor_nombre": self.nombre_usuario,
             "autor_descripcion": self.mi_descripcion,
-            "autor_horario": self.mi_horario,           # <--- AÑADIR ESTO
-            "autor_utc_offset": self.mi_utc_offset,     # <--- AÑADIR ESTO
+            "autor_horario": self.mi_horario,
+            "autor_utc_offset": self.mi_utc_offset,
             "idioma": idioma_final,
             "likes": []
         }
@@ -2109,11 +2110,12 @@ class BlogP2PApp:
             "id": articulo_id, "titulo": titulo, "etiquetas": lista_etiquetas,
             "tematica": tematica, "autor": self.node.local_id, "autor_nombre": self.nombre_usuario,
             "autor_descripcion": self.mi_descripcion,
-            "autor_horario": self.mi_horario,           # <--- AÑADIR ESTO
-            "autor_utc_offset": self.mi_utc_offset,     # <--- AÑADIR ESTO
+            "autor_horario": self.mi_horario,
+            "autor_utc_offset": self.mi_utc_offset,
             "idioma": idioma_final,
             "is_update": True if self.editando_id else False,
             "likes": [],
+            "respaldos": 0,
             "host": self._obtener_ip_local(),
             "port": self.node.listen_port
         }
@@ -2275,18 +2277,39 @@ class BlogP2PApp:
                 likes.append(peer_que_vota)
                 self.mis_articulos[articulo_id]["likes"] = likes
                 self._guardar_like_rapido(articulo_id)
+                
+                # 1. Actualizar la lista de Descubrir localmente
+                for a in self.articulos_descubiertos:
+                    if a["id"] == articulo_id:
+                        a["likes"] = likes
+                        break
+                
+                # 2. Re-publicar el anuncio para actualizar el contador en toda la red
+                art = self.mis_articulos[articulo_id]
+                anuncio = {
+                    "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
+                    "tematica": art["tematica"], "autor": art["autor"],
+                    "autor_nombre": art.get("autor_nombre", self.nombre_usuario), 
+                    "autor_descripcion": art.get("autor_descripcion", self.mi_descripcion),
+                    "autor_horario": art.get("autor_horario", ""),
+                    "autor_utc_offset": art.get("autor_utc_offset", 0.0),
+                    "idioma": art.get("idioma", "Español"),
+                    "is_update": True, "likes": likes,
+                    "respaldos": len(self.respaldos_red.get(articulo_id, {}))
+                }
+                self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
+                
+                self.event_queue.put(("refrescar_ui", None))
                 if self.articulo_actual_id == articulo_id:
                     self.lbl_count.config(text=f"({len(likes)})")
 
     def _al_recibir_save_ping(self, peer_id, value):
         aid = value.get("id")
         if aid and aid in self.mis_articulos:
-            # --- CONVERSIÓN A PRUEBA DE BALAS ---
             if aid not in self.respaldos_red:
                 self.respaldos_red[aid] = {}
             elif isinstance(self.respaldos_red[aid], list):
                 self.respaldos_red[aid] = {peer: time.time() for peer in self.respaldos_red[aid]}
-            # ------------------------------------
             
             self.respaldos_red[aid][peer_id] = time.time()
             self._guardar_datos()
@@ -2297,12 +2320,22 @@ class BlogP2PApp:
                 "tematica": art["tematica"], "autor": art["autor"],
                 "autor_nombre": art.get("autor_nombre", self.nombre_usuario), 
                 "autor_descripcion": art.get("autor_descripcion", self.mi_descripcion),
+                "autor_horario": art.get("autor_horario", ""),
+                "autor_utc_offset": art.get("autor_utc_offset", 0.0),
                 "idioma": art.get("idioma", "Español"),
                 "is_update": True, "likes": art.get("likes", []),
                 "respaldos": len(self.respaldos_red[aid])
             }
+            
+            # NUEVO: Actualizar la lista de Descubrir localmente
+            for i, a in enumerate(self.articulos_descubiertos):
+                if a["id"] == aid:
+                    self.articulos_descubiertos[i] = anuncio
+                    break
+                    
             self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
             self.event_queue.put(("actualizar_respaldos", aid))
+            self.event_queue.put(("refrescar_ui", None))
 
     def _al_recibir_follow_ping(self, peer_id, value):
         nombre_seguidor = value.get("nombre", "Alguien")
@@ -2383,25 +2416,32 @@ class BlogP2PApp:
         aid = value.get("id")
         if aid and aid in self.mis_articulos:
             if aid in self.respaldos_red and peer_id in self.respaldos_red[aid]:
-                self.respaldos_red[aid].remove(peer_id)
+                del self.respaldos_red[aid][peer_id]
                 self._guardar_datos()
                 print(f"🗑️ Nodo {peer_id[:8]}... ha dejado de respaldar tu artículo {aid}")
                 
-                # Re-publicar el anuncio para actualizar el contador en toda la red
                 art = self.mis_articulos[aid]
                 anuncio = {
                     "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
                     "tematica": art["tematica"], "autor": art["autor"],
                     "autor_nombre": art.get("autor_nombre", self.nombre_usuario), 
                     "autor_descripcion": art.get("autor_descripcion", self.mi_descripcion),
+                    "autor_horario": art.get("autor_horario", ""),
+                    "autor_utc_offset": art.get("autor_utc_offset", 0.0),
                     "idioma": art.get("idioma", "Español"),
                     "is_update": True, "likes": art.get("likes", []),
                     "respaldos": len(self.respaldos_red[aid])
                 }
-                self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
                 
-                # Actualizar la vista del autor si tiene el artículo abierto
+                # NUEVO: Actualizar la lista de Descubrir localmente
+                for i, a in enumerate(self.articulos_descubiertos):
+                    if a["id"] == aid:
+                        self.articulos_descubiertos[i] = anuncio
+                        break
+                        
+                self.node.publish(f"blog:tematica:{art['tematica']}", json.dumps(anuncio).encode())
                 self.event_queue.put(("actualizar_respaldos", aid))
+                self.event_queue.put(("refrescar_ui", None))
 
     def _al_recibir_tag_notification(self, peer_id, value):
         notif = {
@@ -2913,41 +2953,53 @@ class BlogP2PApp:
         lbl_titulo = tk.Label(card, text=art.get("titulo", "Sin título"), font=("Helvetica", 16, "bold"), bg="white", fg="#000", wraplength=500, justify="left")
         lbl_titulo.grid(row=1, column=0, sticky="w", pady=(5, 5))
 
-        # --- NUEVO: Vista Previa del Texto ---
+        # Vista Previa del Texto
         snippet = "Abre el artículo para leer más..."
         full_art = self.mis_articulos.get(art["id"]) or self.articulos_guardados.get(art["id"])
         if full_art and isinstance(full_art.get("contenido"), dict):
             texto_completo = full_art["contenido"].get("texto", "")
-            # Limpiar saltos de línea
             texto_limpio = " ".join(texto_completo.split())
-            if len(texto_limpio) > 120:
-                snippet = texto_limpio[:120] + "..."
-            else:
-                snippet = texto_limpio
+            snippet = (texto_limpio[:120] + "...") if len(texto_limpio) > 120 else texto_limpio
 
         lbl_snippet = tk.Label(card, text=snippet, font=("Helvetica", 11, "italic"), bg="white", fg="#555", wraplength=500, justify="left")
         lbl_snippet.grid(row=2, column=0, sticky="w", pady=(0, 10))
 
-        # --- NUEVO: Categoría y Etiquetas ---
+        # Categoría y Etiquetas
         categoria = art.get("tematica", "Sin categoría").capitalize()
         etiquetas = ", ".join(art.get("etiquetas", []))
-        
         texto_meta = f"Categoría: {categoria}"
         if etiquetas:
             texto_meta += f"   |   Etiquetas: {etiquetas}"
-            
         lbl_meta = tk.Label(card, text=texto_meta, font=("Helvetica", 9), bg="white", fg="#888")
         lbl_meta.grid(row=3, column=0, sticky="w")
 
-        # Métricas (Likes y Respaldos)
-        likes = len(art.get("likes", []))
-        respaldos = art.get("respaldos", 0)
+        # --- LA SOLUCIÓN: LEER MÉTRICAS DE LA FUENTE REAL ---
+        if art.get("autor") == self.node.local_id and art["id"] in self.mis_articulos:
+            # Si es mi artículo, los datos reales están en mis_articulos y respaldos_red
+            likes = len(self.mis_articulos[art["id"]].get("likes", []))
+            respaldos_dict = self.respaldos_red.get(art["id"], {})
+            # Contar respaldos activos (soporta listas viejas y diccionarios nuevos)
+            if isinstance(respaldos_dict, list):
+                respaldos = len(respaldos_dict)
+            else:
+                hace_24h = time.time() - 86400
+                respaldos = sum(1 for t in respaldos_dict.values() if t > hace_24h)
+            
+            # Sincronizar el diccionario art (de descubiertos) por si acaso
+            art["likes"] = self.mis_articulos[art["id"]].get("likes", [])
+            art["respaldos"] = respaldos
+        else:
+            # Si es de otro, usamos lo que diga el anuncio de la red
+            likes = len(art.get("likes", []))
+            respaldos = art.get("respaldos", 0)
+        # ----------------------------------------------------
+
         frame_metricas = tk.Frame(card, bg="white")
         frame_metricas.grid(row=4, column=0, sticky="w", pady=(10, 0))
-        lbl_metricas = tk.Label(frame_metricas, text=f"⭐ {likes}   ⚡ {respaldos} respaldos", font=("Helvetica", 10), bg="white", fg="#444")
+        lbl_metricas = tk.Label(frame_metricas, text=f"★ {likes}   ⚡ {respaldos} respaldos", font=("Helvetica", 10), bg="white", fg="#444")
         lbl_metricas.pack()
 
-        # --- Imagen de vista previa ---
+        # Imagen de vista previa
         imagen_b64 = None
         if full_art and isinstance(full_art.get("contenido"), dict):
             imgs = full_art["contenido"].get("imagenes", {})
@@ -2956,20 +3008,24 @@ class BlogP2PApp:
 
         if imagen_b64:
             try:
-                img_data = base64.b64decode(imagen_b64)
-                img = Image.open(io.BytesIO(img_data))
-                img.thumbnail((150, 150))
-                photo = ImageTk.PhotoImage(img)
+                if imagen_b64 in self.cache_imagenes:
+                    photo = self.cache_imagenes[imagen_b64]
+                else:
+                    img_data = base64.b64decode(imagen_b64)
+                    img = Image.open(io.BytesIO(img_data))
+                    img.thumbnail((150, 150))
+                    photo = ImageTk.PhotoImage(img)
+                    self.cache_imagenes[imagen_b64] = photo
+                    
                 self.imagenes_tarjetas.append(photo)
                 lbl_img = tk.Label(card, image=photo, bg="white")
                 lbl_img.grid(row=0, column=1, rowspan=5, padx=(20, 0), sticky="e")
             except: pass
 
-        # --- Efecto Hover Orgánico ---
+        # Efecto Hover
         def on_enter(e):
             for w in [card, lbl_autor, lbl_titulo, lbl_snippet, lbl_meta, frame_metricas, lbl_metricas]:
                 w.configure(bg="#f0f0f0")
-
         def on_leave(e):
             for w in [card, lbl_autor, lbl_titulo, lbl_snippet, lbl_meta, frame_metricas, lbl_metricas]:
                 w.configure(bg="white")
@@ -3517,11 +3573,12 @@ class BlogP2PApp:
         self._refrescar_guardados()
         self._guardar_datos()
         self._actualizar_barra_espacio()
+        # Avisar al autor (en silencio). Si está desconectado, no pasa nada.
         if autor and autor != self.node.local_id:
             try:
-                self._enviar_json_seguro(autor, "save_ping", {"id": aid})
+                self.node.send_json(autor, "save_ping", {"id": aid})
             except Exception:
-                pass
+                print(f"El autor está desconectado. El aviso de respaldo se sincronizará más tarde.")
 
         # Anunciar a toda la red que ahora tenemos una copia
         try:
@@ -3558,7 +3615,7 @@ class BlogP2PApp:
             autor_del_articulo = self.articulos_guardados[aid].get("autor")
             if autor_del_articulo and autor_del_articulo != self.node.local_id:
                 try:
-                    self._enviar_json_seguro(autor_del_articulo, "remove_ping", {"id": aid})
+                    self.node.send_json(autor_del_articulo, "remove_ping", {"id": aid})
                 except Exception:
                     pass
 
