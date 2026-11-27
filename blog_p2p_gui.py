@@ -1913,8 +1913,10 @@ class BlogP2PApp:
         # 3. Enviar nuestro catálogo completo
         articulos = list(self.mis_articulos.values())
         articulos.sort(key=lambda x: x["id"], reverse=True)
+        # 3. Enviar nuestro catálogo completo (Propios + Guardados)
         catalogo = []
-        for art in articulos:
+        # Mis artículos
+        for art in self.mis_articulos.values():
             catalogo.append({
                 "id": art["id"], "titulo": art["titulo"], "etiquetas": art["etiquetas"],
                 "tematica": art["tematica"], "autor": art["autor"],
@@ -1926,6 +1928,20 @@ class BlogP2PApp:
                 "likes": art.get("likes", []),
                 "respaldos": len(self.respaldos_red.get(art["id"], []))
             })
+        # Artículos guardados de otros
+        for aid, art in self.articulos_guardados.items():
+            if aid not in self.mis_articulos: # Evitar duplicados
+                catalogo.append({
+                    "id": aid, "titulo": art["titulo"], "etiquetas": art.get("etiquetas", []),
+                    "tematica": art.get("tematica", ""), "autor": art.get("autor", ""),
+                    "autor_nombre": art.get("autor_nombre", "Desconocido"),
+                    "autor_descripcion": art.get("autor_descripcion", ""),
+                    "autor_horario": art.get("autor_horario", ""),
+                    "autor_utc_offset": art.get("autor_utc_offset", 0.0),
+                    "idioma": art.get("idioma", "Español"),
+                    "likes": art.get("likes", []),
+                    "respaldos": art.get("respaldos", 1) # Al menos este nodo lo tiene
+                })
         
         respuesta = {
             "catalogo": catalogo, 
@@ -1965,6 +1981,11 @@ class BlogP2PApp:
 
             for anuncio in catalogo:
                 if anuncio["id"] not in self.lapidas:
+                    # ¡NUEVO! Registrar que este peer tiene el artículo
+                    aid = anuncio["id"]
+                    if aid not in self.quien_tiene: self.quien_tiene[aid] = []
+                    if peer_id not in self.quien_tiene[aid]: self.quien_tiene[aid].append(peer_id)
+
                     if "autor_descripcion" in anuncio and "autor" in anuncio:
                         self.perfiles_autores[anuncio["autor"]] = {
                             "nombre": anuncio.get("autor_nombre", ""), 
